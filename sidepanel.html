@@ -313,6 +313,76 @@
       color: var(--muted);
       min-height: 24px;
     }
+
+    /* Custom In-DOM Modal Overlay */
+    #confirm-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      backdrop-filter: blur(2px);
+    }
+
+    #confirm-modal-overlay.open {
+      display: flex;
+    }
+
+    .custom-modal {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 85%;
+      max-width: 260px;
+      padding: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .modal-msg {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      padding: 5px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      transition: background 0.15s ease;
+    }
+
+    .modal-btn.cancel {
+      background: transparent;
+      color: var(--muted);
+    }
+    .modal-btn.cancel:hover {
+      background: var(--hover);
+      color: var(--text);
+    }
+
+    .modal-btn.delete {
+      background: var(--danger, #ef4444);
+      color: #ffffff;
+      border-color: var(--danger, #ef4444);
+    }
+    .modal-btn.delete:hover {
+      background: #dc2626;
+    }
   </style>
 </head>
 <body>
@@ -358,6 +428,17 @@
       <span id="stats">0 words</span>
       <span id="save-status">Saved</span>
     </footer>
+  </div>
+
+  <!-- In-DOM Custom Modal -->
+  <div id="confirm-modal-overlay">
+    <div class="custom-modal">
+      <div id="modal-message" class="modal-msg">Are you sure?</div>
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" class="modal-btn cancel">Cancel</button>
+        <button id="modal-delete-btn" class="modal-btn delete">Delete</button>
+      </div>
+    </div>
   </div>
 
   <script src="sidepanel.js"></script>

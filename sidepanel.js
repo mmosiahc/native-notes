@@ -31,6 +31,38 @@ chrome.storage.local.get(["treeCollapsed"], (res) => {
   }
 });
 
+const modalOverlay = document.getElementById("confirm-modal-overlay");
+const modalMsg = document.getElementById("modal-message");
+const modalCancelBtn = document.getElementById("modal-cancel-btn");
+const modalDeleteBtn = document.getElementById("modal-delete-btn");
+
+// Promise-based custom modal
+function showConfirmDialog(message) {
+  return new Promise((resolve) => {
+    modalMsg.textContent = message;
+    modalOverlay.classList.add("open");
+
+    const cleanup = () => {
+      modalOverlay.classList.remove("open");
+      modalCancelBtn.removeEventListener("click", onCancel);
+      modalDeleteBtn.removeEventListener("click", onDelete);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    const onDelete = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    modalCancelBtn.addEventListener("click", onCancel);
+    modalDeleteBtn.addEventListener("click", onDelete);
+  });
+}
+
 // --- Minimal Markdown Parser ---
 function renderMarkdown(md) {
   if (!md) return "<p style='color:#94a3b8;'>Nothing to preview</p>";
@@ -114,13 +146,27 @@ function renderTree() {
     });
 
     // Delete folder button with confirmation
-    header.querySelector(".del-folder").addEventListener("click", (e) => {
-    e.stopPropagation();
+    header.querySelector(".del-folder").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (Object.keys(folders).length <= 1) return;
 
-    if (Object.keys(folders).length <= 1) {
-        alert("You must keep at least one folder.");
-        return;
-    }
+      const count = Object.values(notes).filter((n) => n.folderId === folder.id).length;
+      const warning = count > 0 
+        ? `Delete "${folder.name}" and all ${count} note(s) inside it?` 
+        : `Delete "${folder.name}"?`;
+
+      const confirmed = await showConfirmDialog(warning);
+      if (!confirmed) return;
+
+      delete folders[folder.id];
+      Object.keys(notes).forEach((nid) => {
+        if (notes[nid].folderId === folder.id) delete notes[nid];
+      });
+      activeNoteId = Object.keys(notes)[0] || null;
+      renderTree();
+      loadActiveNote();
+      persistData();
+    });
 
     // Count notes inside this folder to warn the user
     const count = Object.values(notes).filter((n) => n.folderId === folder.id).length;
@@ -225,14 +271,13 @@ addFolderBtn.addEventListener("click", () => {
   persistData();
 });
 
-deleteBtn.addEventListener("click", () => {
+deleteBtn.addEventListener("click", async () => {
   if (!activeNoteId || !notes[activeNoteId]) return;
 
   const currentTitle = notes[activeNoteId].title || "Untitled";
-  if (!confirm(`Are you sure you want to delete "${currentTitle}"?`)) {
-    return;
-  }
-  
+  const confirmed = await showConfirmDialog(`Delete "${currentTitle}"?`);
+  if (!confirmed) return;
+
   delete notes[activeNoteId];
   activeNoteId = Object.keys(notes)[0] || null;
   renderTree();
