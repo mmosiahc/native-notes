@@ -1,0 +1,19 @@
+{
+	"manifest_version": 3,
+	"name": "Native Notes",
+	"version": "1.0.0",
+	"description": "A lightweight notebook sidebar for quick notes and organization",
+	"permissions": [
+		"sidePanel",
+		"storage"
+	],
+	"background": {
+		"service_worker": "service-worker.js"
+	},
+	"side_panel": {
+		"default_path": "sidepanel.html"
+	},
+	"action": {
+		"default_title": "Open Notes"
+	}
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Native Notes</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 14px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #fcfcfc;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    h2 {
+      margin: 0 0 10px 0;
+      font-size: 1rem;
+      color: #333;
+    }
+    textarea {
+      flex: 1;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      resize: none;
+      outline: none;
+      font-family: inherit;
+    }
+    textarea:focus {
+      border-color: #4f46e5;
+    }
+    .status {
+      font-size: 0.75rem;
+      color: #888;
+      margin-top: 6px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <h2>Scratchpad</h2>
+  <textarea id="notes" placeholder="Jot down notes, to-dos, or links..."></textarea>
+  <div class="status" id="status">Saved</div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

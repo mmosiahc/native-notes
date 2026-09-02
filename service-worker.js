@@ -1,0 +1,5 @@
+// Automatically open the side panel when the toolbar icon is clicked
+
+chrome.sidePanel
+	.setPanelBehavior({ openPanelOnActionClick: true})
+	.catch((error) => console.error(error));
