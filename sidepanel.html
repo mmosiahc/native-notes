@@ -2,50 +2,363 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Native Notes</title>
+  <title>Side Notes</title>
   <style>
+    :root {
+      --bg: #ffffff;
+      --sidebar-bg: #f8fafc;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --hover: #f1f5f9;
+      --active: #e2e8f0;
+      --code-bg: #f1f5f9;
+      --code-text: #0f172a;
+      --pre-bg: #0f172a;
+      --pre-text: #f8fafc;
+      --tree-width: 170px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --sidebar-bg: #1e293b;
+        --border: #334155;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+        --hover: #334155;
+        --active: #475569;
+        --code-bg: #1e293b;
+        --code-text: #f1f5f9;
+        --pre-bg: #020617;
+        --pre-text: #f8fafc;
+      }
+
+      textarea#editor {
+        color: #f8fafc !important;
+        background: transparent !important;
+      }
+
+      select#note-select,
+      .icon-btn-sm,
+      button.icon-btn {
+        background: #1e293b !important;
+        color: #f8fafc !important;
+        border-color: #334155 !important;
+      }
+
+      .icon-btn-sm:hover,
+      button.icon-btn:hover {
+        background: #334155 !important;
+      }
+
+      .folder-header {
+        color: #e2e8f0 !important;
+      }
+
+      .segmented-control {
+        background: #334155 !important;
+      }
+
+      .segmented-control button.active {
+        background: #0f172a !important;
+        color: #f8fafc !important;
+      }
+
+      #editor-pane header {
+        background: #0f172a !important;
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      padding: 14px;
-      font-family: system-ui, -apple-system, sans-serif;
-      background-color: #fcfcfc;
-      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Collapsible Left File Tree */
+    #tree-pane {
+      width: var(--tree-width);
+      min-width: var(--tree-width);
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      height: 100vh;
+      height: 100%;
+      transition: margin-left 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+      white-space: nowrap;
+      overflow: hidden;
     }
-    h2 {
-      margin: 0 0 10px 0;
-      font-size: 1rem;
-      color: #333;
+
+    /* When collapsed, slide off-screen to the left */
+    #tree-pane.collapsed {
+      margin-left: calc(-1 * var(--tree-width));
+      opacity: 0;
+      pointer-events: none;
     }
-    textarea {
+
+    /* Folder chevron and collapse state */
+    .folder-header .chevron {
+    display: inline-block;
+    font-size: 9px;
+    transition: transform 0.15s ease;
+    margin-right: 4px;
+    }
+
+    .folder-group.collapsed .chevron {
+    transform: rotate(-90deg);
+    }
+
+    .folder-group.collapsed .note-list {
+    display: none;
+    }
+
+    .pane-header {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 41px;
+    }
+
+    .pane-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+    }
+
+    .icon-btn-sm {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      height: 22px;
+    }
+    .icon-btn-sm:hover { background: var(--hover); }
+
+    #tree-container {
       flex: 1;
-      width: 100%;
-      box-sizing: border-box;
-      padding: 10px;
-      border: 1px solid #ddd;
+      overflow-y: auto;
+      padding: 6px;
+    }
+
+    .folder-group { margin-bottom: 6px; }
+
+    .folder-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+      cursor: pointer;
+    }
+    .folder-header:hover { background: var(--hover); }
+
+    .folder-name {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .folder-actions {
+      display: none;
+      gap: 2px;
+    }
+    .folder-header:hover .folder-actions { display: flex; }
+
+    .note-list {
+      padding-left: 14px;
+      margin-top: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .note-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .note-item:hover { background: var(--hover); color: var(--text); }
+    .note-item.active { background: var(--active); color: var(--text); font-weight: 500; }
+
+    /* Right Editor Main Pane */
+    #editor-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      min-width: 0; /* Prevents flex children from blowing past container width */
+    }
+
+    header {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      min-height: 41px;
+    }
+
+    .header-left, .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .segmented-control {
+      display: flex;
+      background: var(--border);
       border-radius: 6px;
-      font-size: 0.95rem;
-      resize: none;
+      padding: 2px;
+    }
+    .segmented-control button {
+      border: none;
+      background: transparent;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .segmented-control button.active { background: #fff; color: var(--text); }
+
+    .editor-wrapper {
+      flex: 1;
+      position: relative;
+      display: flex;
+      overflow: hidden;
+    }
+
+    textarea#editor {
+      width: 100%;
+      height: 100%;
+      border: none;
       outline: none;
-      font-family: inherit;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      resize: none;
+      background: transparent;
+      color: var(--text);
     }
-    textarea:focus {
-      border-color: #4f46e5;
+
+    #preview {
+      display: none;
+      width: 100%;
+      height: 100%;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
     }
-    .status {
-      font-size: 0.75rem;
-      color: #888;
-      margin-top: 6px;
-      text-align: right;
+
+    #preview h1, #preview h2, #preview h3 { margin: 10px 0 6px; font-weight: 600; }
+    #preview h1 { font-size: 1.2rem; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    #preview p { margin-bottom: 8px; }
+    #preview ul, #preview ol { padding-left: 18px; margin-bottom: 8px; }
+    #preview code { background: var(--code-bg); color: var(--code-text); padding: 2px 4px; border-radius: 4px; font-size: 11px; }
+    #preview pre { background: var(--pre-bg); color: var(--pre-text); padding: 8px; border-radius: 4px; overflow-x: auto; margin-bottom: 8px; }
+    #preview pre code { background: transparent; color: inherit; }
+    #preview blockquote { border-left: 3px solid var(--primary); padding-left: 8px; color: var(--muted); margin: 8px 0; }
+    #preview a { color: var(--primary); text-decoration: none; }
+    #preview a:hover { text-decoration: underline; }
+
+    footer {
+      padding: 4px 12px;
+      border-top: 1px solid var(--border);
+      background: var(--sidebar-bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--muted);
+      min-height: 24px;
     }
   </style>
 </head>
 <body>
-  <h2>Scratchpad</h2>
-  <textarea id="notes" placeholder="Jot down notes, to-dos, or links..."></textarea>
-  <div class="status" id="status">Saved</div>
+  <!-- File Tree Sidebar -->
+  <div id="tree-pane">
+    <div class="pane-header">
+      <span class="pane-title">Folders</span>
+      <div style="display: flex; gap: 4px;">
+        <button id="add-folder-btn" class="icon-btn-sm" title="New Folder">📁+</button>
+      </div>
+    </div>
+    <div id="tree-container"></div>
+  </div>
+
+  <!-- Note Editor Pane -->
+  <div id="editor-pane">
+    <header>
+      <div class="header-left">
+        <!-- Sidebar Collapse / Expand Toggle Button -->
+        <button id="toggle-tree-btn" class="icon-btn-sm" title="Toggle Focus Mode">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+          </svg>
+        </button>
+        <div class="segmented-control">
+          <button id="tab-edit" class="active">Write</button>
+          <button id="tab-preview">Preview</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="clip-btn" class="icon-btn-sm" title="Clip highlighted text & URL">✂ Clip</button>
+        <button id="delete-btn" class="icon-btn-sm" title="Delete Note">🗑</button>
+      </div>
+    </header>
+
+    <div class="editor-wrapper">
+      <textarea id="editor" placeholder="Write markdown or use Clip..."></textarea>
+      <div id="preview"></div>
+    </div>
+
+    <footer>
+      <span id="stats">0 words</span>
+      <span id="save-status">Saved</span>
+    </footer>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>
