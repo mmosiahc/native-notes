@@ -101,16 +101,16 @@ function showCustomDialog({ title = "", message = "", defaultValue = null, isPro
 }
 
 // Convenient wrappers
-function showPromptDialog(title, defaultValue = "") {
-  return showCustomDialog({ title, defaultValue, isPrompt: true });
+function showPromptDialog({title = "Prompt", message = "", defaultValue = ""}) {
+  return showCustomDialog({ title, message, defaultValue, isPrompt: true });
 }
 
-function showConfirmDialog(message) {
-  return showCustomDialog({ title: "Confirm", message, isDanger: true });
+function showConfirmDialog(message, title = "Confirm") {
+  return showCustomDialog({ title, message, isDanger: true });
 }
 
-function showAlertDialog(message) {
-  return showCustomDialog({ title: "Notice", message, showCancel: false });
+function showAlertDialog(message, title = "Notice") {
+  return showCustomDialog({ title, message, showCancel: false });
 }
 
 // --- Minimal Markdown Parser ---
@@ -174,42 +174,46 @@ chrome.storage.local.get(["gitConfig"], (res) => {
 // Configure Git one time via prompt dialogs
 // Configure Git with fine-grained PAT guidance and security notices
 gitConfigBtn.addEventListener("click", async () => {
-  const repoPath = await showPromptDialog(
-    "1. Enter your GitHub repo (must exist):\nFormat: username/repo-name",
-    gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : ""
-  );
+  const repoPath = await showPromptDialog({
+    title: "Step 1: GitHub Repository",
+    message: "Enter an existing repository (must exist on GitHub):\nFormat: username/repo-name",
+    defaultValue: gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : ""
+  });
   if (!repoPath || !repoPath.includes("/")) return;
 
   const [owner, repo] = repoPath.split("/").map((s) => s.trim());
 
   const tokenNotice = 
-    `2. Enter your Fine-Grained PAT:\n` +
+    `Enter a Fine-Grained PAT with access to "${repo}".\n\n` +
     `• Target: "${repo}"\n` +
-    `• Repository Permissions: Contents (Read & Write)`;
+    `• Permissions: Contents (Read & Write)\n\n` +
+    `Note: Edits continuously create Git commits.`;
 
-  const token = await showPromptDialog(tokenNotice, gitConfig?.token || "");
+  const token = await showPromptDialog({
+    title: "Step 2: Access Token",
+    message: tokenNotice,
+    defaultValue: gitConfig?.token || ""
+  });
   if (!token) return;
 
   const candidateConfig = { token: token.trim(), owner, repo, branch: "main" };
 
-  // Test the connection immediately before saving
+  // Test connection immediately
   saveStatus.textContent = "Verifying Git...";
   try {
     const originalConfig = gitConfig;
     gitConfig = candidateConfig;
     await verifyRepoAccess();
 
-    // Success: persist config
     await chrome.storage.local.set({ gitConfig });
     gitIndicator.style.display = "inline-flex";
     gitStatusText.textContent = `${repo}:main`;
 
-    await showAlertDialog(`Connected to ${repo}! Notes will now sync automatically.`);
+    await showAlertDialog(`Connected to ${repo}! Notes will now sync automatically.`, "Connected");
     syncActiveNoteToGit();
   } catch (err) {
-    // Revert if test failed
     console.error(err);
-    await showAlertDialog(`Git Setup Failed:\n${err.message}`);
+    await showAlertDialog(`Git Setup Failed:\n\n${err.message}`, "Error");
     saveStatus.textContent = "Git setup error";
   }
 });
@@ -453,7 +457,11 @@ editor.addEventListener("input", () => {
 
 // --- Toolbar Buttons ---
 addFolderBtn.addEventListener("click", async () => {
-  const name = await showPromptDialog("New Folder Name:", "New Folder");
+  const name = await showPromptDialog({
+    title: "New Folder",
+    message: "Enter folder name:",
+    defaultValue: "New Folder"
+  });
   if (!name || !name.trim()) return;
 
   const fid = "f_" + Date.now();
