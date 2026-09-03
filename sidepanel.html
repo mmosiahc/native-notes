@@ -457,9 +457,22 @@
     </div>
 
     <footer>
+    <div style="display: flex; align-items: center; gap: 8px;">
       <span id="stats">0 words</span>
+      <span id="git-indicator" style="display: none; align-items: center; gap: 4px; color: var(--muted); cursor: pointer;" title="Configured with GitHub">
+        <!-- Git Branch Icon -->
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
+          <path fill-rule="evenodd" d="M11.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122V6A2.5 2.5 0 0110 8.5H6a1 1 0 00-1 1v1.128a2.251 2.251 0 11-1.5 0V5.372a2.25 2.25 0 111.5 0v1.836A2.492 2.492 0 016 7h4a1 1 0 001-1v-.628A2.25 2.25 0 019.5 3.25zM4.25 12a.75.75 0 100 1.5.75.75 0 000-1.5zM3.5 3.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0z"></path>
+        </svg>
+        <span id="git-status-text">main</span>
+      </span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px;">
       <span id="save-status">Saved</span>
-    </footer>
+      <button id="git-config-btn" class="icon-btn-sm" title="Configure Git Sync" style="height: 18px; padding: 1px 4px; font-size: 10px;">⚙ Git</button>
+    </div>
+  </footer>
   </div>
 
   <!-- In-DOM Custom Modal -->

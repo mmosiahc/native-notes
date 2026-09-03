@@ -142,14 +142,120 @@ function persistData() {
   saveTimer = setTimeout(() => {
     chrome.storage.sync.set({ folders, notes, activeNoteId }, () => {
       saveStatus.textContent = "Saved";
+      // Auto-commit to Git in the background without any button presses
+      syncActiveNoteToGit();
     });
-  }, 350);
+  }, 400);
 }
 
 function updateStats() {
   const text = editor.value.trim();
   const words = text ? text.split(/\s+/).length : 0;
   stats.textContent = `${words} words · ${text.length} chars`;
+}
+
+// --- Git Integration State & Helpers ---
+const gitIndicator = document.getElementById("git-indicator");
+const gitStatusText = document.getElementById("git-status-text");
+const gitConfigBtn = document.getElementById("git-config-btn");
+
+let gitConfig = null; // { token, owner, repo, branch }
+let isGitSyncing = false;
+
+// Load Git credentials on startup
+chrome.storage.local.get(["gitConfig"], (res) => {
+  if (res.gitConfig && res.gitConfig.token) {
+    gitConfig = res.gitConfig;
+    gitIndicator.style.display = "inline-flex";
+    gitStatusText.textContent = `${gitConfig.repo}:${gitConfig.branch || "main"}`;
+  }
+});
+
+// Configure Git one time via prompt dialogs
+gitConfigBtn.addEventListener("click", async () => {
+  const token = await showPromptDialog("GitHub Token (needs 'repo' scope):", gitConfig?.token || "");
+  if (!token) return;
+
+  const repoPath = await showPromptDialog("Repository (e.g. username/my-notes):", gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : "");
+  if (!repoPath || !repoPath.includes("/")) return;
+
+  const [owner, repo] = repoPath.split("/").map((s) => s.trim());
+  gitConfig = { token: token.trim(), owner, repo, branch: "main" };
+
+  await chrome.storage.local.set({ gitConfig });
+  gitIndicator.style.display = "inline-flex";
+  gitStatusText.textContent = `${repo}:main`;
+  await showAlertDialog("Git Connected! Native Notes will automatically commit changes in the background.");
+  syncActiveNoteToGit();
+});
+
+// Silent Background Committer
+// Conflict-Free, One-Way Push Engine (Native Notes -> GitHub)
+async function syncActiveNoteToGit() {
+  if (!gitConfig || !activeNoteId || !notes[activeNoteId] || isGitSyncing) return;
+
+  const note = notes[activeNoteId];
+  const folderName = folders[note.folderId]?.name || "General";
+  
+  // Clean illegal file path characters
+  const cleanFolder = folderName.replace(/[/\\?%*:|"<>]/g, "-").trim();
+  const cleanTitle = (note.title || "Untitled").replace(/[/\\?%*:|"<>]/g, "-").trim();
+  const filePath = `${cleanFolder}/${cleanTitle}.md`;
+
+  isGitSyncing = true;
+  saveStatus.textContent = "Committing...";
+
+  try {
+    const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
+    const headers = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${gitConfig.token}`,
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+
+    // 1. Fetch remote file state to get the latest SHA (if it exists)
+    // Adding a timestamp query param busts GitHub API edge-cache
+    let fileSha = null;
+    const checkRes = await fetch(`${apiBase}?ref=${gitConfig.branch || "main"}&_=${Date.now()}`, {
+      method: "GET",
+      headers
+    });
+
+    if (checkRes.ok) {
+      const data = await checkRes.json();
+      fileSha = data.sha;
+    }
+
+    // 2. Encode UTF-8 content to base64 cleanly
+    const contentPayload = note.content || `# ${note.title}\n`;
+    const base64Content = btoa(unescape(encodeURIComponent(contentPayload)));
+
+    // 3. Blind force-commit: Native Notes always wins
+    const putRes = await fetch(apiBase, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        message: `Update ${filePath} [Native Notes]`,
+        content: base64Content,
+        sha: fileSha || undefined, // Supplying latest SHA guarantees GitHub accepts overwrite
+        branch: gitConfig.branch || "main"
+      })
+    });
+
+    if (!putRes.ok) {
+      const err = await putRes.json();
+      throw new Error(err.message || putRes.statusText);
+    }
+
+    saveStatus.textContent = "Git Backed Up";
+    setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+  } catch (err) {
+    // Non-blocking: local notes remain intact even if network drops
+    console.warn("One-way Git push skipped:", err.message);
+    saveStatus.textContent = "Saved locally";
+  } finally {
+    isGitSyncing = false;
+  }
 }
 
 // --- Render Folder & Note Tree ---
