@@ -191,13 +191,48 @@ gitConfigBtn.addEventListener("click", async () => {
 
 // Silent Background Committer
 // Conflict-Free, One-Way Push Engine (Native Notes -> GitHub)
+// Helper: Ensure the repository exists, or auto-create it
+async function ensureRepoExists() {
+  const repoCheckUrl = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}`;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${gitConfig.token}`,
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+
+  const res = await fetch(repoCheckUrl, { headers });
+  if (res.ok) return true;
+
+  if (res.status === 404) {
+    saveStatus.textContent = "Creating repo...";
+    // Automatically create a private repository initialized with a README
+    const createRes = await fetch("https://api.github.com/user/repos", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: gitConfig.repo,
+        private: true,
+        auto_init: true, // Crucial: creates initial commit with main branch
+        description: "Native Notes Archive"
+      })
+    });
+
+    if (createRes.ok) {
+      // Brief pause to allow GitHub's edge to initialize the branch
+      await new Promise((r) => setTimeout(r, 1500));
+      return true;
+    }
+  }
+  return false;
+}
+
+// Conflict-Free, Auto-Provisioning Push Engine
 async function syncActiveNoteToGit() {
   if (!gitConfig || !activeNoteId || !notes[activeNoteId] || isGitSyncing) return;
 
   const note = notes[activeNoteId];
   const folderName = folders[note.folderId]?.name || "General";
   
-  // Clean illegal file path characters
   const cleanFolder = folderName.replace(/[/\\?%*:|"<>]/g, "-").trim();
   const cleanTitle = (note.title || "Untitled").replace(/[/\\?%*:|"<>]/g, "-").trim();
   const filePath = `${cleanFolder}/${cleanTitle}.md`;
@@ -206,15 +241,21 @@ async function syncActiveNoteToGit() {
   saveStatus.textContent = "Committing...";
 
   try {
-    const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
     const headers = {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${gitConfig.token}`,
       "X-GitHub-Api-Version": "2022-11-28"
     };
 
-    // 1. Fetch remote file state to get the latest SHA (if it exists)
-    // Adding a timestamp query param busts GitHub API edge-cache
+    // Ensure the repo exists before attempting to write contents
+    const exists = await ensureRepoExists();
+    if (!exists) {
+      throw new Error(`Repository "${gitConfig.owner}/${gitConfig.repo}" could not be accessed or created.`);
+    }
+
+    const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
+
+    // 1. Fetch remote file state to get the latest SHA if it exists
     let fileSha = null;
     const checkRes = await fetch(`${apiBase}?ref=${gitConfig.branch || "main"}&_=${Date.now()}`, {
       method: "GET",
@@ -230,14 +271,14 @@ async function syncActiveNoteToGit() {
     const contentPayload = note.content || `# ${note.title}\n`;
     const base64Content = btoa(unescape(encodeURIComponent(contentPayload)));
 
-    // 3. Blind force-commit: Native Notes always wins
+    // 3. Put content to create/update the file
     const putRes = await fetch(apiBase, {
       method: "PUT",
       headers,
       body: JSON.stringify({
         message: `Update ${filePath} [Native Notes]`,
         content: base64Content,
-        sha: fileSha || undefined, // Supplying latest SHA guarantees GitHub accepts overwrite
+        sha: fileSha || undefined,
         branch: gitConfig.branch || "main"
       })
     });
@@ -250,7 +291,6 @@ async function syncActiveNoteToGit() {
     saveStatus.textContent = "Git Backed Up";
     setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
   } catch (err) {
-    // Non-blocking: local notes remain intact even if network drops
     console.warn("One-way Git push skipped:", err.message);
     saveStatus.textContent = "Saved locally";
   } finally {
