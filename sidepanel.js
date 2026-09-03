@@ -32,35 +32,85 @@ chrome.storage.local.get(["treeCollapsed"], (res) => {
 });
 
 const modalOverlay = document.getElementById("confirm-modal-overlay");
+const modalTitle = document.getElementById("modal-title");
 const modalMsg = document.getElementById("modal-message");
+const modalInput = document.getElementById("modal-input");
 const modalCancelBtn = document.getElementById("modal-cancel-btn");
-const modalDeleteBtn = document.getElementById("modal-delete-btn");
+const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
-// Promise-based custom modal
-function showConfirmDialog(message) {
+// Generic in-DOM Dialog Engine
+function showCustomDialog({ title = "", message = "", defaultValue = null, isPrompt = false, isDanger = false, showCancel = true }) {
   return new Promise((resolve) => {
+    modalTitle.textContent = title;
+    modalTitle.style.display = title ? "block" : "none";
+
     modalMsg.textContent = message;
+    modalMsg.style.display = message ? "block" : "none";
+
+    if (isPrompt) {
+      modalInput.style.display = "block";
+      modalInput.value = defaultValue || "";
+      setTimeout(() => {
+        modalInput.focus();
+        modalInput.select();
+      }, 50);
+    } else {
+      modalInput.style.display = "none";
+    }
+
+    modalCancelBtn.style.display = showCancel ? "block" : "none";
+
+    // Style confirm button based on action type
+    modalConfirmBtn.className = isDanger ? "modal-btn danger" : "modal-btn confirm";
+    modalConfirmBtn.textContent = isDanger ? "Delete" : "OK";
+
     modalOverlay.classList.add("open");
 
     const cleanup = () => {
       modalOverlay.classList.remove("open");
       modalCancelBtn.removeEventListener("click", onCancel);
-      modalDeleteBtn.removeEventListener("click", onDelete);
+      modalConfirmBtn.removeEventListener("click", onConfirm);
+      window.removeEventListener("keydown", onKey);
     };
 
     const onCancel = () => {
       cleanup();
-      resolve(false);
+      resolve(null);
     };
 
-    const onDelete = () => {
+    const onConfirm = () => {
+      const val = isPrompt ? modalInput.value : true;
       cleanup();
-      resolve(true);
+      resolve(val);
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        onConfirm();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
     };
 
     modalCancelBtn.addEventListener("click", onCancel);
-    modalDeleteBtn.addEventListener("click", onDelete);
+    modalConfirmBtn.addEventListener("click", onConfirm);
+    window.addEventListener("keydown", onKey);
   });
+}
+
+// Convenient wrappers
+function showPromptDialog(title, defaultValue = "") {
+  return showCustomDialog({ title, defaultValue, isPrompt: true });
+}
+
+function showConfirmDialog(message) {
+  return showCustomDialog({ title: "Confirm", message, isDanger: true });
+}
+
+function showAlertDialog(message) {
+  return showCustomDialog({ title: "Notice", message, showCancel: false });
 }
 
 // --- Minimal Markdown Parser ---
@@ -149,7 +199,7 @@ function renderTree() {
     header.querySelector(".del-folder").addEventListener("click", async (e) => {
       e.stopPropagation();
       if (Object.keys(folders).length <= 1) {
-        alert("You must keep at least one folder.");
+        await showAlertDialog("You must keep at least one folder.");
         return;
       }
 
@@ -244,9 +294,10 @@ editor.addEventListener("input", () => {
 });
 
 // --- Toolbar Buttons ---
-addFolderBtn.addEventListener("click", () => {
-  const name = prompt("Folder name:", "New Folder");
+addFolderBtn.addEventListener("click", async () => {
+  const name = await showPromptDialog("New Folder Name:", "New Folder");
   if (!name || !name.trim()) return;
+
   const fid = "f_" + Date.now();
   folders[fid] = { id: fid, name: name.trim() };
   renderTree();

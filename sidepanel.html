@@ -335,25 +335,48 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       width: 85%;
-      max-width: 260px;
+      max-width: 270px;
       padding: 16px;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
+    }
+
+    .modal-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
     }
 
     .modal-msg {
-      font-size: 13px;
+      font-size: 12px;
       line-height: 1.5;
-      color: var(--text);
+      color: var(--muted);
       word-break: break-word;
+    }
+
+    .modal-input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .modal-input:focus {
+      border-color: var(--primary);
     }
 
     .modal-actions {
       display: flex;
       justify-content: flex-end;
       gap: 8px;
+      margin-top: 4px;
     }
 
     .modal-btn {
@@ -375,12 +398,21 @@
       color: var(--text);
     }
 
-    .modal-btn.delete {
+    .modal-btn.confirm {
+      background: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+    }
+    .modal-btn.confirm:hover {
+      background: var(--primary-hover);
+    }
+
+    .modal-btn.danger {
       background: var(--danger, #ef4444);
       color: #ffffff;
       border-color: var(--danger, #ef4444);
     }
-    .modal-btn.delete:hover {
+    .modal-btn.danger:hover {
       background: #dc2626;
     }
   </style>
@@ -433,10 +465,12 @@
   <!-- In-DOM Custom Modal -->
   <div id="confirm-modal-overlay">
     <div class="custom-modal">
-      <div id="modal-message" class="modal-msg">Are you sure?</div>
+      <div id="modal-title" class="modal-title">Prompt</div>
+      <div id="modal-message" class="modal-msg"></div>
+      <input type="text" id="modal-input" class="modal-input" style="display: none;" autocomplete="off" />
       <div class="modal-actions">
         <button id="modal-cancel-btn" class="modal-btn cancel">Cancel</button>
-        <button id="modal-delete-btn" class="modal-btn delete">Delete</button>
+        <button id="modal-confirm-btn" class="modal-btn confirm">Confirm</button>
       </div>
     </div>
   </div>
