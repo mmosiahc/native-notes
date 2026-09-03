@@ -31,15 +31,26 @@ chrome.storage.local.get(["treeCollapsed"], (res) => {
   }
 });
 
+// Generic in-DOM Dialog Engine
 const modalOverlay = document.getElementById("confirm-modal-overlay");
 const modalTitle = document.getElementById("modal-title");
 const modalMsg = document.getElementById("modal-message");
 const modalInput = document.getElementById("modal-input");
 const modalCancelBtn = document.getElementById("modal-cancel-btn");
+const modalExtraBtn = document.getElementById("modal-extra-btn");
 const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
-// Generic in-DOM Dialog Engine
-function showCustomDialog({ title = "", message = "", defaultValue = null, isPrompt = false, isDanger = false, showCancel = true }) {
+function showCustomDialog({
+  title = "",
+  message = "",
+  defaultValue = null,
+  isPrompt = false,
+  isDanger = false,
+  showCancel = true,
+  confirmLabel = null,
+  cancelLabel = "Cancel",
+  extraBtnLabel = null
+}) {
   return new Promise((resolve) => {
     modalTitle.textContent = title;
     modalTitle.style.display = title ? "block" : "none";
@@ -58,17 +69,28 @@ function showCustomDialog({ title = "", message = "", defaultValue = null, isPro
       modalInput.style.display = "none";
     }
 
+    // Cancel Button
     modalCancelBtn.style.display = showCancel ? "block" : "none";
+    modalCancelBtn.textContent = cancelLabel;
 
-    // Style confirm button based on action type
+    // Optional Extra Action Button
+    if (extraBtnLabel) {
+      modalExtraBtn.style.display = "block";
+      modalExtraBtn.textContent = extraBtnLabel;
+    } else {
+      modalExtraBtn.style.display = "none";
+    }
+
+    // Confirm Button
     modalConfirmBtn.className = isDanger ? "modal-btn danger" : "modal-btn confirm";
-    modalConfirmBtn.textContent = isDanger ? "Delete" : "OK";
+    modalConfirmBtn.textContent = confirmLabel || (isDanger ? "Delete" : "OK");
 
     modalOverlay.classList.add("open");
 
     const cleanup = () => {
       modalOverlay.classList.remove("open");
       modalCancelBtn.removeEventListener("click", onCancel);
+      modalExtraBtn.removeEventListener("click", onExtra);
       modalConfirmBtn.removeEventListener("click", onConfirm);
       window.removeEventListener("keydown", onKey);
     };
@@ -76,6 +98,11 @@ function showCustomDialog({ title = "", message = "", defaultValue = null, isPro
     const onCancel = () => {
       cleanup();
       resolve(null);
+    };
+
+    const onExtra = () => {
+      cleanup();
+      resolve("EXTRA");
     };
 
     const onConfirm = () => {
@@ -95,6 +122,7 @@ function showCustomDialog({ title = "", message = "", defaultValue = null, isPro
     };
 
     modalCancelBtn.addEventListener("click", onCancel);
+    modalExtraBtn.addEventListener("click", onExtra);
     modalConfirmBtn.addEventListener("click", onConfirm);
     window.addEventListener("keydown", onKey);
   });
@@ -171,9 +199,13 @@ chrome.storage.local.get(["gitConfig"], (res) => {
   }
 });
 
-// Configure Git one time via prompt dialogs
-// Configure Git with fine-grained PAT guidance and security notices
-gitConfigBtn.addEventListener("click", async () => {
+// Check if a valid, functional Git configuration exists
+function isGitConnected() {
+  return Boolean(gitConfig && gitConfig.token && gitConfig.owner && gitConfig.repo);
+}
+
+// Full Onboarding Flow
+async function startGitOnboarding() {
   const repoPath = await showPromptDialog({
     title: "Step 1: GitHub Repository",
     message: "Enter an existing repository (must exist on GitHub):\nFormat: username/repo-name",
@@ -183,7 +215,7 @@ gitConfigBtn.addEventListener("click", async () => {
 
   const [owner, repo] = repoPath.split("/").map((s) => s.trim());
 
-  const tokenNotice = 
+  const tokenNotice =
     `Enter a Fine-Grained PAT with access to "${repo}".\n\n` +
     `• Target: "${repo}"\n` +
     `• Permissions: Contents (Read & Write)\n\n` +
@@ -198,7 +230,6 @@ gitConfigBtn.addEventListener("click", async () => {
 
   const candidateConfig = { token: token.trim(), owner, repo, branch: "main" };
 
-  // Test connection immediately
   saveStatus.textContent = "Verifying Git...";
   try {
     const originalConfig = gitConfig;
@@ -212,10 +243,54 @@ gitConfigBtn.addEventListener("click", async () => {
     await showAlertDialog(`Connected to ${repo}! Notes will now sync automatically.`, "Connected");
     syncActiveNoteToGit();
   } catch (err) {
+    gitConfig = originalConfig;
     console.error(err);
     await showAlertDialog(`Git Setup Failed:\n\n${err.message}`, "Error");
     saveStatus.textContent = "Git setup error";
   }
+}
+
+// Git Button Click Handler
+gitConfigBtn.addEventListener("click", async () => {
+  // If already connected, show the status modal
+  if (isGitConnected()) {
+    const statusDetails =
+      `Status: Connected\n` +
+      `Repository: ${gitConfig.owner}/${gitConfig.repo}\n` +
+      `Target Branch: ${gitConfig.branch || "main"}\n` +
+      `Sync: Continuous Background Commits`;
+
+    const choice = await showCustomDialog({
+      title: "Git Integration Status",
+      message: statusDetails,
+      showCancel: true,
+      cancelLabel: "Close",
+      extraBtnLabel: "Disconnect",
+      confirmLabel: "Reconfigure"
+    });
+
+    if (choice === true) {
+      // User clicked "Reconfigure"
+      startGitOnboarding();
+    } else if (choice === "EXTRA") {
+      // User clicked "Disconnect"
+      const confirmed = await showConfirmDialog(
+        `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Your local notes will remain untouched, but background sync will stop.`
+      );
+      if (confirmed) {
+        gitConfig = null;
+        await chrome.storage.local.remove("gitConfig");
+        gitIndicator.style.display = "none";
+        gitStatusText.textContent = "";
+        saveStatus.textContent = "Git disconnected";
+        setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+      }
+    }
+    return;
+  }
+
+  // Not connected yet: Launch onboarding
+  startGitOnboarding();
 });
 
 // Silent Background Committer
