@@ -174,37 +174,50 @@ chrome.storage.local.get(["gitConfig"], (res) => {
 // Configure Git one time via prompt dialogs
 // Configure Git with fine-grained PAT guidance and security notices
 gitConfigBtn.addEventListener("click", async () => {
-  const tokenNotice = 
-    "Enter a GitHub Fine-Grained Personal Access Token (PAT).\n" +
-    "• Repository access: Only your notes repo\n" +
-    "• Permissions: Contents (Read & Write)\n\n" +
-    "Note: Edits continuously create permanent Git commits. Avoid storing raw passwords or API keys.";
-
-  const token = await showPromptDialog(tokenNotice, gitConfig?.token || "");
-  if (!token) return;
-
   const repoPath = await showPromptDialog(
-    "Repository in format 'username/repo-name':", 
+    "1. Enter your GitHub repo (must exist):\nFormat: username/repo-name",
     gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : ""
   );
   if (!repoPath || !repoPath.includes("/")) return;
 
   const [owner, repo] = repoPath.split("/").map((s) => s.trim());
-  gitConfig = { token: token.trim(), owner, repo, branch: "main" };
 
-  // Store in chrome.storage.local (sandboxed to extension, not synced across devices)
-  await chrome.storage.local.set({ gitConfig });
-  gitIndicator.style.display = "inline-flex";
-  gitStatusText.textContent = `${repo}:main`;
+  const tokenNotice = 
+    `2. Enter your Fine-Grained PAT:\n` +
+    `• Target: "${repo}"\n` +
+    `• Repository Permissions: Contents (Read & Write)`;
 
-  await showAlertDialog("Git connected! A private repository will be used, and notes will sync automatically in the background.");
-  syncActiveNoteToGit();
+  const token = await showPromptDialog(tokenNotice, gitConfig?.token || "");
+  if (!token) return;
+
+  const candidateConfig = { token: token.trim(), owner, repo, branch: "main" };
+
+  // Test the connection immediately before saving
+  saveStatus.textContent = "Verifying Git...";
+  try {
+    const originalConfig = gitConfig;
+    gitConfig = candidateConfig;
+    await verifyRepoAccess();
+
+    // Success: persist config
+    await chrome.storage.local.set({ gitConfig });
+    gitIndicator.style.display = "inline-flex";
+    gitStatusText.textContent = `${repo}:main`;
+
+    await showAlertDialog(`Connected to ${repo}! Notes will now sync automatically.`);
+    syncActiveNoteToGit();
+  } catch (err) {
+    // Revert if test failed
+    console.error(err);
+    await showAlertDialog(`Git Setup Failed:\n${err.message}`);
+    saveStatus.textContent = "Git setup error";
+  }
 });
 
 // Silent Background Committer
 // Conflict-Free, One-Way Push Engine (Native Notes -> GitHub)
 // Helper: Verify repository exists, or auto-create as strictly PRIVATE
-async function ensureRepoExists() {
+async function verifyRepoAccess() {
   const repoCheckUrl = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}`;
   const headers = {
     Accept: "application/vnd.github+json",
@@ -216,25 +229,16 @@ async function ensureRepoExists() {
   if (res.ok) return true;
 
   if (res.status === 404) {
-    saveStatus.textContent = "Creating private repo...";
-    // Strictly enforce private: true
-    const createRes = await fetch("https://api.github.com/user/repos", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        name: gitConfig.repo,
-        private: true, // Guarantees repo is never public
-        auto_init: true,
-        description: "Native Notes Archive (Private)"
-      })
-    });
-
-    if (createRes.ok) {
-      await new Promise((r) => setTimeout(r, 1500));
-      return true;
-    }
+    throw new Error(
+      `Cannot find "${gitConfig.owner}/${gitConfig.repo}".\n` +
+      "Make sure the repo exists on GitHub and your token is granted access to it."
+    );
   }
-  return false;
+
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("Access denied. Please check your token permissions (Contents: Read & Write).");
+  }
+  return res.ok;
 }
 
 // Conflict-Free, Auto-Provisioning Push Engine
@@ -252,21 +256,14 @@ async function syncActiveNoteToGit() {
   saveStatus.textContent = "Committing...";
 
   try {
+    const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
     const headers = {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${gitConfig.token}`,
       "X-GitHub-Api-Version": "2022-11-28"
     };
 
-    // Ensure the repo exists before attempting to write contents
-    const exists = await ensureRepoExists();
-    if (!exists) {
-      throw new Error(`Repository "${gitConfig.owner}/${gitConfig.repo}" could not be accessed or created.`);
-    }
-
-    const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
-
-    // 1. Fetch remote file state to get the latest SHA if it exists
+    // 1. Fetch remote SHA (if file exists)
     let fileSha = null;
     const checkRes = await fetch(`${apiBase}?ref=${gitConfig.branch || "main"}&_=${Date.now()}`, {
       method: "GET",
@@ -278,11 +275,11 @@ async function syncActiveNoteToGit() {
       fileSha = data.sha;
     }
 
-    // 2. Encode UTF-8 content to base64 cleanly
+    // 2. Encode UTF-8 content
     const contentPayload = note.content || `# ${note.title}\n`;
     const base64Content = btoa(unescape(encodeURIComponent(contentPayload)));
 
-    // 3. Put content to create/update the file
+    // 3. Commit update
     const putRes = await fetch(apiBase, {
       method: "PUT",
       headers,
@@ -302,12 +299,10 @@ async function syncActiveNoteToGit() {
     saveStatus.textContent = "Git Backed Up";
     setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
   } catch (err) {
-    // Check for bad credentials without printing the token
     if (err.message && err.message.includes("401")) {
       saveStatus.textContent = "Git auth failed";
-      console.error("Git authentication error: Please verify your Personal Access Token.");
     } else {
-      console.warn("One-way Git push skipped:", err.message);
+      console.warn("Git sync skipped:", err.message);
       saveStatus.textContent = "Saved locally";
     }
   } finally {
