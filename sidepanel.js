@@ -172,26 +172,38 @@ chrome.storage.local.get(["gitConfig"], (res) => {
 });
 
 // Configure Git one time via prompt dialogs
+// Configure Git with fine-grained PAT guidance and security notices
 gitConfigBtn.addEventListener("click", async () => {
-  const token = await showPromptDialog("GitHub Token (needs 'repo' scope):", gitConfig?.token || "");
+  const tokenNotice = 
+    "Enter a GitHub Fine-Grained Personal Access Token (PAT).\n" +
+    "• Repository access: Only your notes repo\n" +
+    "• Permissions: Contents (Read & Write)\n\n" +
+    "Note: Edits continuously create permanent Git commits. Avoid storing raw passwords or API keys.";
+
+  const token = await showPromptDialog(tokenNotice, gitConfig?.token || "");
   if (!token) return;
 
-  const repoPath = await showPromptDialog("Repository (e.g. username/my-notes):", gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : "");
+  const repoPath = await showPromptDialog(
+    "Repository in format 'username/repo-name':", 
+    gitConfig ? `${gitConfig.owner}/${gitConfig.repo}` : ""
+  );
   if (!repoPath || !repoPath.includes("/")) return;
 
   const [owner, repo] = repoPath.split("/").map((s) => s.trim());
   gitConfig = { token: token.trim(), owner, repo, branch: "main" };
 
+  // Store in chrome.storage.local (sandboxed to extension, not synced across devices)
   await chrome.storage.local.set({ gitConfig });
   gitIndicator.style.display = "inline-flex";
   gitStatusText.textContent = `${repo}:main`;
-  await showAlertDialog("Git Connected! Native Notes will automatically commit changes in the background.");
+
+  await showAlertDialog("Git connected! A private repository will be used, and notes will sync automatically in the background.");
   syncActiveNoteToGit();
 });
 
 // Silent Background Committer
 // Conflict-Free, One-Way Push Engine (Native Notes -> GitHub)
-// Helper: Ensure the repository exists, or auto-create it
+// Helper: Verify repository exists, or auto-create as strictly PRIVATE
 async function ensureRepoExists() {
   const repoCheckUrl = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}`;
   const headers = {
@@ -204,21 +216,20 @@ async function ensureRepoExists() {
   if (res.ok) return true;
 
   if (res.status === 404) {
-    saveStatus.textContent = "Creating repo...";
-    // Automatically create a private repository initialized with a README
+    saveStatus.textContent = "Creating private repo...";
+    // Strictly enforce private: true
     const createRes = await fetch("https://api.github.com/user/repos", {
       method: "POST",
       headers,
       body: JSON.stringify({
         name: gitConfig.repo,
-        private: true,
-        auto_init: true, // Crucial: creates initial commit with main branch
-        description: "Native Notes Archive"
+        private: true, // Guarantees repo is never public
+        auto_init: true,
+        description: "Native Notes Archive (Private)"
       })
     });
 
     if (createRes.ok) {
-      // Brief pause to allow GitHub's edge to initialize the branch
       await new Promise((r) => setTimeout(r, 1500));
       return true;
     }
@@ -291,8 +302,14 @@ async function syncActiveNoteToGit() {
     saveStatus.textContent = "Git Backed Up";
     setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
   } catch (err) {
-    console.warn("One-way Git push skipped:", err.message);
-    saveStatus.textContent = "Saved locally";
+    // Check for bad credentials without printing the token
+    if (err.message && err.message.includes("401")) {
+      saveStatus.textContent = "Git auth failed";
+      console.error("Git authentication error: Please verify your Personal Access Token.");
+    } else {
+      console.warn("One-way Git push skipped:", err.message);
+      saveStatus.textContent = "Saved locally";
+    }
   } finally {
     isGitSyncing = false;
   }
@@ -483,6 +500,56 @@ clipBtn.addEventListener("click", async () => {
   } catch (e) {
     console.error("Clipper error:", e);
   }
+});
+
+// Secure incoming message gate
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 1. Origin verification: Must originate from your own extension context
+  if (sender.id !== chrome.runtime.id) {
+    console.warn("Unauthorized message rejected from sender:", sender);
+    return;
+  }
+
+  // 2. Action validation
+  if (!message || message.action !== "CLIP_NOTE") {
+    return;
+  }
+
+  // 3. Payload type check
+  if (typeof message.content !== "string") {
+    console.warn("Malformed clip payload rejected");
+    return;
+  }
+
+  // 4. Input size limit (cap at 500 KB to avoid memory abuse or API rejections)
+  const MAX_CLIP_LENGTH = 500 * 1024;
+  const sanitizedContent = message.content.slice(0, MAX_CLIP_LENGTH);
+  const noteTitle = (typeof message.title === "string" && message.title.trim()) 
+    ? message.title.trim().slice(0, 100) 
+    : "Web Clip";
+
+  // Append or create a note with the sanitized payload
+  if (activeNoteId && notes[activeNoteId]) {
+    notes[activeNoteId].content = (notes[activeNoteId].content || "") + "\n\n" + sanitizedContent;
+    loadActiveNote();
+    persistData();
+  } else {
+    const firstFolder = Object.keys(folders)[0] || "f_default";
+    const newId = "n_" + Date.now();
+    notes[newId] = {
+      id: newId,
+      folderId: firstFolder,
+      title: noteTitle,
+      content: `# ${noteTitle}\n\n${sanitizedContent}`,
+      updatedAt: Date.now()
+    };
+    activeNoteId = newId;
+    renderTree();
+    loadActiveNote();
+    persistData();
+  }
+
+  sendResponse({ success: true });
 });
 
 // Segmented write/preview controls
