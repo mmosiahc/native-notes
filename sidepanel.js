@@ -140,7 +140,7 @@ function persistData() {
   saveStatus.textContent = "Saving...";
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    chrome.storage.sync.set({ folders, notes, activeNoteId }, () => {
+    chrome.storage.local.set({ folders, notes, activeNoteId }, () => {
       saveStatus.textContent = "Saved";
       // Auto-commit to Git in the background without any button presses
       syncActiveNoteToGit();
@@ -462,28 +462,38 @@ tabPreview.addEventListener("click", () => {
 });
 
 // --- Boot / Migration ---
-chrome.storage.sync.get(["folders", "notes", "activeNoteId", "notebook"], (res) => {
+// Change chrome.storage.sync to chrome.storage.local
+// (We include a fallback check for sync so existing notes migrate automatically)
+chrome.storage.local.get(["folders", "notes", "activeNoteId"], (res) => {
   if (res.folders && Object.keys(res.folders).length > 0) {
     folders = res.folders;
     notes = res.notes || {};
     activeNoteId = res.activeNoteId && notes[res.activeNoteId] ? res.activeNoteId : Object.keys(notes)[0];
+    renderTree();
+    loadActiveNote();
   } else {
-    // Default / Seed data
-    folders = {
-      f_default: { id: "f_default", name: "General" }
-    };
-    notes = {
-      n_seed: {
-        id: "n_seed",
-        folderId: "f_default",
-        title: "Welcome Note",
-        content: "# Folder Notes\n\nClick **📁+** to add folders or **＋** to create notes under any folder.",
-        updatedAt: Date.now()
+    // Check old sync storage once to migrate any existing notes
+    chrome.storage.sync.get(["folders", "notes", "activeNoteId"], (syncRes) => {
+      if (syncRes.folders) {
+        folders = syncRes.folders;
+        notes = syncRes.notes || {};
+        activeNoteId = syncRes.activeNoteId || Object.keys(notes)[0];
+        persistData(); // saves them forward into local storage
+      } else {
+        folders = { f_default: { id: "f_default", name: "General" } };
+        notes = {
+          n_seed: {
+            id: "n_seed",
+            folderId: "f_default",
+            title: "Welcome Note",
+            content: "# Native Notes\n\nStart typing or clip from any tab.",
+            updatedAt: Date.now()
+          }
+        };
+        activeNoteId = "n_seed";
       }
-    };
-    activeNoteId = "n_seed";
+      renderTree();
+      loadActiveNote();
+    });
   }
-
-  renderTree();
-  loadActiveNote();
 });
