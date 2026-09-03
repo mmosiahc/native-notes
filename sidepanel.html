@@ -162,15 +162,14 @@
 
     .folder-group { margin-bottom: 6px; }
 
+    /* Ensure folder header flex layout truncates cleanly */
     .folder-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 4px 6px;
-      border-radius: 4px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #334155;
+      gap: 4px;
+      user-select: none;
       cursor: pointer;
     }
     .folder-header:hover { background: var(--hover); }
@@ -178,15 +177,24 @@
     .folder-name {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
+      min-width: 0; /* Critical for flex child truncation */
+      flex: 1 1 auto;
+    }
+
+    .folder-label {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      min-width: 0;
+      font-size: 12px;
     }
 
     .folder-actions {
-      display: none;
+      display: flex;
+      align-items: center;
       gap: 2px;
+      flex: 0 0 auto; /* Keeps the + and ✕ buttons fixed width */
     }
     .folder-header:hover .folder-actions { display: flex; }
 

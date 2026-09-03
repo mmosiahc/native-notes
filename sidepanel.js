@@ -406,13 +406,13 @@ function renderTree() {
       folderGroup.classList.add("collapsed");
     }
 
-    // Header with chevron indicator
+    // Header with chevron indicator, truncated label, and full-name tooltip
     const header = document.createElement("div");
     header.className = "folder-header";
     header.innerHTML = `
       <div class="folder-name">
         <span class="chevron">▼</span>
-        <span>📁 ${folder.name}</span>
+        <span class="folder-label" title="${folder.name}">📁 ${folder.name}</span>
       </div>
       <div class="folder-actions">
         <button class="icon-btn-sm add-note-in-folder" title="New Note in Folder">＋</button>
@@ -420,9 +420,29 @@ function renderTree() {
       </div>
     `;
 
-    // Click folder header to manually toggle collapse / expand
+    // Click folder header to toggle collapse / expand
     header.addEventListener("click", () => {
       folderGroup.classList.toggle("collapsed");
+    });
+
+    // Double-click folder name to rename
+    const folderLabel = header.querySelector(".folder-label");
+    folderLabel.addEventListener("dblclick", async (e) => {
+      e.stopPropagation(); // Prevents collapsing/expanding the folder on double click
+
+      const updatedName = await showPromptDialog({
+        title: "Rename Folder",
+        message: "Enter new folder name:",
+        defaultValue: folder.name
+      });
+
+      if (!updatedName || !updatedName.trim() || updatedName.trim() === folder.name) {
+        return;
+      }
+
+      folders[folder.id].name = updatedName.trim();
+      renderTree();
+      persistData();
     });
 
     // Add note button inside folder header
