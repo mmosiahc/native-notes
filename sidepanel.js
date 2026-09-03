@@ -145,10 +145,13 @@ function renderTree() {
       createNote(folder.id, "Untitled");
     });
 
-    // Delete folder button with confirmation
+    // Delete folder button with custom modal confirmation
     header.querySelector(".del-folder").addEventListener("click", async (e) => {
       e.stopPropagation();
-      if (Object.keys(folders).length <= 1) return;
+      if (Object.keys(folders).length <= 1) {
+        alert("You must keep at least one folder.");
+        return;
+      }
 
       const count = Object.values(notes).filter((n) => n.folderId === folder.id).length;
       const warning = count > 0 
@@ -168,27 +171,6 @@ function renderTree() {
       persistData();
     });
 
-    // Count notes inside this folder to warn the user
-    const count = Object.values(notes).filter((n) => n.folderId === folder.id).length;
-    const warning = count > 0 
-        ? `Are you sure you want to delete "${folder.name}" and all ${count} note(s) inside it?` 
-        : `Are you sure you want to delete "${folder.name}"?`;
-
-    if (!confirm(warning)) {
-        return;
-    }
-
-    delete folders[folder.id];
-    Object.keys(notes).forEach((nid) => {
-        if (notes[nid].folderId === folder.id) delete notes[nid];
-    });
-
-    activeNoteId = Object.keys(notes)[0] || null;
-    renderTree();
-    loadActiveNote();
-    persistData();
-    });
-
     folderGroup.appendChild(header);
 
     // Notes List
@@ -203,7 +185,7 @@ function renderTree() {
       item.addEventListener("click", (e) => {
         e.stopPropagation();
         activeNoteId = note.id;
-        renderTree(); // Re-renders and expands this folder while collapsing others
+        renderTree();
         loadActiveNote();
         persistData();
       });
