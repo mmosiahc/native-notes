@@ -451,7 +451,8 @@ function renderTree() {
         return;
       }
 
-      const count = Object.values(notes).filter((n) => n.folderId === folder.id).length;
+      const folderNotes = Object.values(notes).filter((n) => n.folderId === folder.id);
+      const count = folderNotes.length;
       const warning = count > 0 
         ? `Delete "${folder.name}" and all ${count} note(s) inside it?` 
         : `Delete "${folder.name}"?`;
@@ -459,6 +460,10 @@ function renderTree() {
       const confirmed = await showConfirmDialog(warning);
       if (!confirmed) return;
 
+      // Collect remote paths for all notes within the folder
+      const pathsToDelete = folderNotes.map((n) => getNoteFilePath(n)).filter(Boolean);
+
+      // Local state update
       delete folders[folder.id];
       Object.keys(notes).forEach((nid) => {
         if (notes[nid].folderId === folder.id) delete notes[nid];
@@ -467,9 +472,21 @@ function renderTree() {
       renderTree();
       loadActiveNote();
       persistData();
+
+      // Async batch deletion on GitHub (removes directory automatically)
+      if (pathsToDelete.length > 0 && gitConfig) {
+        saveStatus.textContent = "Purging folder in Git...";
+        for (const filePath of pathsToDelete) {
+          await deleteRemoteFile(filePath);
+        }
+        saveStatus.textContent = "Git synced";
+        setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+      }
     });
 
     folderGroup.appendChild(header);
+
+    
 
     // Notes List
     const noteList = document.createElement("div");
@@ -493,6 +510,58 @@ function renderTree() {
     folderGroup.appendChild(noteList);
     treeContainer.appendChild(folderGroup);
   });
+}
+
+async function deleteRemoteFile(filePath) {
+  if (!gitConfig) return;
+
+  const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${gitConfig.token}`,
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+
+  try {
+    // 1. Fetch current file SHA (required by GitHub to delete)
+    const checkRes = await fetch(`${apiBase}?ref=${gitConfig.branch || "main"}&_=${Date.now()}`, {
+      method: "GET",
+      headers
+    });
+
+    if (!checkRes.ok) {
+      if (checkRes.status === 404) return; // File wasn't synced yet, nothing to delete
+      throw new Error(`Failed checking file SHA: ${checkRes.statusText}`);
+    }
+
+    const fileData = await checkRes.json();
+
+    // 2. Send DELETE request
+    const delRes = await fetch(apiBase, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({
+        message: `Delete ${filePath} [Native Notes]`,
+        sha: fileData.sha,
+        branch: gitConfig.branch || "main"
+      })
+    });
+
+    if (!delRes.ok) {
+      const err = await delRes.json();
+      throw new Error(err.message || delRes.statusText);
+    }
+  } catch (err) {
+    console.warn(`Remote deletion failed for ${filePath}:`, err.message);
+  }
+}
+
+function getNoteFilePath(note) {
+  if (!note) return null;
+  const folderName = folders[note.folderId]?.name || "General";
+  const cleanFolder = folderName.replace(/[/\\?%*:|"<>]/g, "-").trim();
+  const cleanTitle = (note.title || "Untitled").replace(/[/\\?%*:|"<>]/g, "-").trim();
+  return `${cleanFolder}/${cleanTitle}.md`;
 }
 
 function loadActiveNote() {
@@ -559,15 +628,28 @@ addFolderBtn.addEventListener("click", async () => {
 deleteBtn.addEventListener("click", async () => {
   if (!activeNoteId || !notes[activeNoteId]) return;
 
-  const currentTitle = notes[activeNoteId].title || "Untitled";
+  const noteToDelete = notes[activeNoteId];
+  const currentTitle = noteToDelete.title || "Untitled";
   const confirmed = await showConfirmDialog(`Delete "${currentTitle}"?`);
   if (!confirmed) return;
 
+  // Calculate remote path before removing from memory
+  const remotePath = getNoteFilePath(noteToDelete);
+
+  // Local state update
   delete notes[activeNoteId];
   activeNoteId = Object.keys(notes)[0] || null;
   renderTree();
   loadActiveNote();
   persistData();
+
+  // Async remote deletion
+  if (remotePath && gitConfig) {
+    saveStatus.textContent = "Removing from Git...";
+    await deleteRemoteFile(remotePath);
+    saveStatus.textContent = "Git synced";
+    setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+  }
 });
 
 // Clip feature
