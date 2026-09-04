@@ -144,23 +144,14 @@ function showAlertDialog(message, title = "Notice") {
 // --- Minimal Markdown Parser ---
 function renderMarkdown(md) {
   if (!md) return "<p style='color:#94a3b8;'>Nothing to preview</p>";
-  let html = md
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/^### (.*$)/gim, "<h3>$1</h3>")
-    .replace(/^## (.*$)/gim, "<h2>$1</h2>")
-    .replace(/^# (.*$)/gim, "<h1>$1</h1>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/^\> (.*$)/gim, "<blockquote>$1</blockquote>")
-    .replace(/^\- (.*$)/gim, "<li>$1</li>")
-    .replace(/\[ \]/g, '<input type="checkbox" disabled>')
-    .replace(/\[x\]/g, '<input type="checkbox" checked disabled>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br>");
-  return `<p>${html}</p>`.replace(/<p><\/p>/g, "");
+
+  // Configure GFM features
+  marked.setOptions({
+    gfm: true,
+    breaks: true // Renders single line breaks as <br>
+  });
+
+  return marked.parse(md);
 }
 
 // --- Persistence ---

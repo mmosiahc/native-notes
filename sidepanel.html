@@ -432,6 +432,66 @@
     .modal-btn.danger:hover {
       background: #dc2626;
     }
+
+    /* --- GFM Tables --- */
+    #preview table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 12px;
+      line-height: 1.4;
+      overflow: hidden;
+    }
+
+    #preview th,
+    #preview td {
+      padding: 6px 10px;
+      border: 1px solid var(--border, #334155);
+      text-align: left;
+    }
+
+    #preview th {
+      background: rgba(255, 255, 255, 0.05);
+      font-weight: 600;
+      color: var(--text, #f8fafc);
+    }
+
+    #preview tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* --- Nested Lists --- */
+    #preview ul,
+    #preview ol {
+      padding-left: 20px;
+      margin: 6px 0;
+    }
+
+    #preview li {
+      margin: 3px 0;
+      line-height: 1.4;
+    }
+
+    #preview li > ul,
+    #preview li > ol {
+      margin: 2px 0 2px 0;
+      padding-left: 18px; /* Indentation for sub-bullets */
+    }
+
+    /* --- Task Lists / Checkboxes --- */
+    #preview li:has(input[type="checkbox"]) {
+      list-style-type: none;
+      margin-left: -14px; /* Pull back to align nicely with regular text */
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #preview input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: var(--accent, #3b82f6);
+      margin: 0;
+    }
   </style>
 </head>
 <body>
@@ -506,6 +566,7 @@
     </div>
   </div>
 
+  <script src="marked.min.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>
