@@ -492,6 +492,16 @@
       accent-color: var(--accent, #3b82f6);
       margin: 0;
     }
+
+    /* Ensure all preview buttons have visible contrast */
+    #preview button {
+      background: var(--accent, #3b82f6);
+      color: #ffffff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -549,7 +559,7 @@
       <span id="save-status">Saved</span>
       <button id="git-config-btn" class="icon-btn-sm" title="Configure Git Sync" style="height: 18px; padding: 1px 4px; font-size: 10px;">⚙ Git</button>
     </div>
-  </footer>
+    </footer>
   </div>
 
   <!-- In-DOM Custom Modal -->
