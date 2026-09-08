@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Zinc Dark Squircle Tile -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#18181b" stroke="#27272a" stroke-width="4"/>
+
+  <!-- Sharp White Base Block -->
+  <rect x="24" y="28" width="80" height="72" fill="#fafafa"/>
+
+  <!-- Top Arrow: Left Half (Tuned 4px inward from x=82 -> x=78) -->
+  <!-- Stem: x=64 to 78, Base shoulder at (48, 28), Tip at (78, 64) -->
+  <polygon points="64,12 78,12 78,64 48,28 64,28" 
+           fill="#22c55e" stroke="#18181b" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- Bottom Arrow: Right Half (Tuned 4px inward from x=46 -> x=50) -->
+  <!-- Stem: x=50 to 64, Tip at (50, 64), Base shoulder at (80, 100) -->
+  <polygon points="50,64 50,116 64,116 64,100 80,100" 
+           fill="#22c55e" stroke="#18181b" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>
