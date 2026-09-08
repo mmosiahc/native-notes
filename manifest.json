@@ -4,7 +4,10 @@
 	"version": "1.0.0",
 	"action": {
 		"default_title": "Native Notes",
-		"default_icon": "icons/icon.svg"
+		"default_icon": {
+			"16": "icons/icon16.png",
+			"32": "icons/icon32.png"
+		}
 	},
 	"icons": {
 		"16": "icons/icon16.png",
@@ -28,8 +31,12 @@
 	},
 	"content_scripts": [
 		{
-			"matches": ["<all_urls>"],
-			"js": ["content.js"],
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content.js"
+			],
 			"run_at": "document_idle"
 		}
 	]
