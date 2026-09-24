@@ -31,6 +31,25 @@ chrome.storage.local.get(["treeCollapsed"], (res) => {
   }
 });
 
+function updateExtensionIcon(isDark) {
+  const mode = isDark ? "dark" : "light";
+  chrome.action.setIcon({
+    path: {
+      "16": `icons/icon-${mode}-16.png`,
+      "32": `icons/icon-${mode}-32.png`
+    }
+  });
+}
+
+// 1. Detect on startup
+const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+updateExtensionIcon(mediaQuery.matches);
+
+// 2. React if user toggles system OS theme live
+mediaQuery.addEventListener("change", (e) => {
+  updateExtensionIcon(e.matches);
+});
+
 // Generic in-DOM Dialog Engine
 const modalOverlay = document.getElementById("confirm-modal-overlay");
 const modalTitle = document.getElementById("modal-title");
