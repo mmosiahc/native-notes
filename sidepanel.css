@@ -459,8 +459,8 @@ footer {
 
 /* Modal Input Focus: Standard Black in Light Mode */
 .modal-input:focus {
-  border-color: #000000;
-  box-shadow: 0 0 0 1px #000000;
+  border-color: var(--border);
+  box-shadow: none;
 }
 
 /* Modal Input Focus: Off-White in Dark Mode */
