@@ -141,6 +141,28 @@ function showAlertDialog(message, title = "Notice") {
   return showCustomDialog({ title, message, showCancel: false });
 }
 
+/**
+ * Validating wrapper optimized specifically for note filenames.
+ * @returns {Promise<string|null>} Resolves with a valid filename or null
+ */
+async function promptNoteName({ title = "Note Name", message = "", defaultValue = "" }) {
+  // Use your existing Prompt dialog
+  const input = await showPromptDialog({ title, message, defaultValue });
+
+  if (input === null) return null; // User cancelled
+
+  // Use Step 2's sanitizer to check the input
+  const sanitizedInput = sanitizeFileName(input);
+
+  // If input was just illegal characters or blank, fail gracefully
+  if (!sanitizedInput || sanitizedInput.length === 0) {
+    await showAlertDialog("Invalid note name. Please use standard characters.", "Invalid Name");
+    return null; // Return null so the action (create/rename) stops
+  }
+
+  return sanitizedInput;
+}
+
 // --- Minimal Markdown Parser ---
 function renderMarkdown(md) {
   if (!md) return "<p style='color:#94a3b8;'>Nothing to preview</p>";
@@ -243,44 +265,54 @@ async function startGitOnboarding() {
 
 // Git Button Click Handler
 gitConfigBtn.addEventListener("click", async () => {
-  // If already connected, show the status modal
   if (isGitConnected()) {
     const statusDetails =
-      `Status: Connected\n` +
       `Repository: ${gitConfig.owner}/${gitConfig.repo}\n` +
-      `Target Branch: ${gitConfig.branch || "main"}\n` +
-      `Sync: Continuous Background Commits`;
+      `Branch: ${gitConfig.branch || "main"}\n\n` +
+      `Choose an action:`;
 
     const choice = await showCustomDialog({
-      title: "Git Integration Status",
+      title: "Git Integration",
       message: statusDetails,
       showCancel: true,
       cancelLabel: "Close",
-      extraBtnLabel: "Disconnect",
-      confirmLabel: "Reconfigure"
+      extraBtnLabel: "Options...", // Opens Reconfigure/Disconnect
+      confirmLabel: "Sync All to Git"
     });
 
     if (choice === true) {
-      // User clicked "Reconfigure"
-      startGitOnboarding();
+      // Trigger Full Reconciliation
+      await syncFullTreeToGit();
     } else if (choice === "EXTRA") {
-      // User clicked "Disconnect"
-      const confirmed = await showConfirmDialog(
-        `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Your local notes will remain untouched, but background sync will stop.`
-      );
-      if (confirmed) {
-        gitConfig = null;
-        await chrome.storage.local.remove("gitConfig");
-        gitIndicator.style.display = "none";
-        gitStatusText.textContent = "";
-        saveStatus.textContent = "Git disconnected";
-        setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+      // Sub-menu for Reconfigure vs Disconnect
+      const manageChoice = await showCustomDialog({
+        title: "Manage Git Connection",
+        message: `Connected to ${gitConfig.owner}/${gitConfig.repo}`,
+        showCancel: true,
+        cancelLabel: "Back",
+        extraBtnLabel: "Disconnect",
+        confirmLabel: "Reconfigure"
+      });
+
+      if (manageChoice === true) {
+        startGitOnboarding();
+      } else if (manageChoice === "EXTRA") {
+        const confirmed = await showConfirmDialog(
+          `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Local notes will remain.`
+        );
+        if (confirmed) {
+          gitConfig = null;
+          await chrome.storage.local.remove("gitConfig");
+          gitIndicator.style.display = "none";
+          gitStatusText.textContent = "";
+          saveStatus.textContent = "Git disconnected";
+          setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+        }
       }
     }
     return;
   }
 
-  // Not connected yet: Launch onboarding
   startGitOnboarding();
 });
 
@@ -380,6 +412,90 @@ async function syncActiveNoteToGit() {
   }
 }
 
+/**
+ * Full Tree Sync:
+ * 1. Queries GitHub's Git Trees API recursively to see all existing remote .md files.
+ * 2. Pushes/updates all local notes to their current folder paths.
+ * 3. Deletes any remote files that have been removed or moved locally.
+ */
+async function syncFullTreeToGit() {
+  if (!isGitConnected()) return;
+
+  saveStatus.textContent = "Syncing full tree...";
+  isGitSyncing = true;
+
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${gitConfig.token}`,
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+
+  try {
+    const branch = gitConfig.branch || "main";
+
+    // 1. Fetch the recursive tree of the repository
+    const treeUrl = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/git/trees/${branch}?recursive=1`;
+    const treeRes = await fetch(treeUrl, { headers });
+
+    let remoteFiles = {}; // Maps filePath -> blob SHA
+    if (treeRes.ok) {
+      const treeData = await treeRes.json();
+      (treeData.tree || []).forEach((item) => {
+        if (item.type === "blob" && item.path.endsWith(".md")) {
+          remoteFiles[item.path] = item.sha;
+        }
+      });
+    }
+
+    // 2. Build local desired file path map
+    // Maps filePath -> note object
+    const localFiles = {};
+    Object.values(notes).forEach((note) => {
+      const path = getNoteFilePath(note);
+      if (path) localFiles[path] = note;
+    });
+
+    // 3. Delete remote files that do not exist locally
+    for (const [remotePath, sha] of Object.entries(remoteFiles)) {
+      if (!localFiles[remotePath]) {
+        saveStatus.textContent = `Deleting ${remotePath}...`;
+        await deleteRemoteFile(remotePath);
+      }
+    }
+
+    // 4. Push/Update all local notes
+    for (const [filePath, note] of Object.entries(localFiles)) {
+      saveStatus.textContent = `Syncing ${note.title}...`;
+      const apiBase = `https://api.github.com/repos/${gitConfig.owner}/${gitConfig.repo}/contents/${encodeURIComponent(filePath)}`;
+
+      // Check current remote SHA for this specific path
+      let fileSha = remoteFiles[filePath] || null;
+
+      const contentPayload = note.content || `# ${note.title}\n`;
+      const base64Content = btoa(unescape(encodeURIComponent(contentPayload)));
+
+      await fetch(apiBase, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          message: `Sync ${filePath} [Native Notes]`,
+          content: base64Content,
+          sha: fileSha || undefined,
+          branch: branch
+        })
+      });
+    }
+
+    saveStatus.textContent = "Tree fully synced";
+    setTimeout(() => (saveStatus.textContent = "Saved"), 2500);
+  } catch (err) {
+    console.error("Full tree sync failed:", err);
+    saveStatus.textContent = "Sync error";
+  } finally {
+    isGitSyncing = false;
+  }
+}
+
 // --- Render Folder & Note Tree ---
 function renderTree() {
   treeContainer.innerHTML = "";
@@ -419,7 +535,7 @@ function renderTree() {
     // Double-click folder name to rename
     const folderLabel = header.querySelector(".folder-label");
     folderLabel.addEventListener("dblclick", async (e) => {
-      e.stopPropagation(); // Prevents collapsing/expanding the folder on double click
+      e.stopPropagation();
 
       const updatedName = await showPromptDialog({
         title: "Rename Folder",
@@ -431,17 +547,49 @@ function renderTree() {
         return;
       }
 
-      folders[folder.id].name = updatedName.trim();
+      const oldFolderName = folder.name;
+      const newFolderName = updatedName.trim();
+
+      // 1. Gather all old remote paths before updating state
+      const folderNotes = Object.values(notes).filter((n) => n.folderId === folder.id);
+      const oldPaths = folderNotes.map((n) => getNoteFilePath(n)).filter(Boolean);
+
+      // 2. Update local state
+      folders[folder.id].name = newFolderName;
       renderTree();
       persistData();
+
+      // 3. Move on GitHub (Delete old paths, then push new paths)
+      if (gitConfig && oldPaths.length > 0) {
+        saveStatus.textContent = "Moving folder in Git...";
+        for (const oldPath of oldPaths) {
+          await deleteRemoteFile(oldPath);
+        }
+        // Re-push notes under the new folder path
+        await syncFullTreeToGit();
+      }
     });
 
+
     // Add note button inside folder header
-    header.querySelector(".add-note-in-folder").addEventListener("click", (e) => {
-      e.stopPropagation();
-      folderGroup.classList.remove("collapsed");
-      createNote(folder.id, "Untitled");
-    });
+    const addNoteBtn = header.querySelector(".add-note-in-folder");
+    if (addNoteBtn) {
+      addNoteBtn.addEventListener("click", async (e) => {
+        e.stopPropagation(); // CRITICAL: stops header from collapsing/toggling
+
+        folderGroup.classList.remove("collapsed");
+
+        const noteTitle = await promptNoteName({
+          title: "New Note",
+          message: `Create note in "${folder.name}":`,
+          defaultValue: "New Note"
+        });
+
+        if (!noteTitle) return;
+
+        createNote(folder.id, noteTitle);
+      });
+    }
 
     // Delete folder button with custom modal confirmation
     header.querySelector(".del-folder").addEventListener("click", async (e) => {
@@ -486,7 +634,6 @@ function renderTree() {
 
     folderGroup.appendChild(header);
 
-    
 
     // Notes List
     const noteList = document.createElement("div");
@@ -494,17 +641,80 @@ function renderTree() {
 
     const folderNotes = Object.values(notes).filter((n) => n.folderId === folder.id);
     folderNotes.forEach((note) => {
-      const item = document.createElement("div");
-      item.className = `note-item ${note.id === activeNoteId ? "active" : ""}`;
-      item.textContent = note.title || "Untitled";
-      item.addEventListener("click", (e) => {
+      // 1. Create container for note item and actions
+      const itemContainer = document.createElement("div");
+      itemContainer.className = `note-item ${note.id === activeNoteId ? "active" : ""}`;
+
+      // 2. Clickable area for note name
+      const titleLabel = document.createElement("span");
+      titleLabel.className = "note-title-label";
+      titleLabel.textContent = note.title || "Untitled";
+
+      titleLabel.addEventListener("click", (e) => {
         e.stopPropagation();
         activeNoteId = note.id;
         renderTree();
         loadActiveNote();
         persistData();
       });
-      noteList.appendChild(item);
+      
+      itemContainer.appendChild(titleLabel);
+
+      // 3. New Action Button Area (hidden until hover)
+      const noteActions = document.createElement("div");
+      noteActions.className = "note-actions";
+
+      // 4. ADD the "Rename Note" button
+      const renameBtn = document.createElement("button");
+      renameBtn.className = "icon-btn-sm rename-note";
+      renameBtn.innerHTML = "✎"; // or use an SVG
+      renameBtn.title = "Rename Note";
+
+      // --- ADD the click handler that invokes the Step 3 dialog and Step 2 fix ---
+      renameBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        
+        // Use Step 3's validated prompt
+        const newName = await promptNoteName({
+          title: "Rename Note",
+          message: `Change filename for "${note.title}"?`,
+          defaultValue: note.title
+        });
+
+        // Fail conditions: cancel, same name, or blank name
+        if (!newName || newName === note.title) return;
+
+        // --- THE GIT FIX: Atomic Rename Operation ---
+        if (gitConfig) {
+          saveStatus.textContent = "Renaming on Git...";
+
+          // a. Calculate the current (old) file path
+          const oldRemotePath = getNoteFilePath(note);
+
+          // b. Delete the old file path on GitHub
+          if (oldRemotePath) {
+            await deleteRemoteFile(oldRemotePath);
+          }
+          
+          // c. Reset local title state in memory
+          notes[note.id].title = newName;
+          notes[note.id].updatedAt = Date.now();
+
+          // d. Force immediate sync (it will sync content to the NEW path from Step b)
+          await syncActiveNoteToGit();
+        } else {
+          // If Git isn't connected, just update memory
+          notes[note.id].title = newName;
+          notes[note.id].updatedAt = Date.now();
+        }
+
+        renderTree(); // Refresh labels
+        persistData(); // Saves memory update (e.g. updatedAt)
+      });
+      
+      noteActions.appendChild(renameBtn);
+      itemContainer.appendChild(noteActions);
+      noteList.appendChild(itemContainer);
     });
 
     folderGroup.appendChild(noteList);
@@ -556,6 +766,28 @@ async function deleteRemoteFile(filePath) {
   }
 }
 
+// Strips characters that break Git filenames and GitHub URLs
+function sanitizeFileName(name) {
+  return name
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, '-') // Replace illegal characters
+    .trim()
+    .slice(0, 50);                  // Good URL hygiene limit
+}
+
+// Generates the deterministic path on GitHub
+function getNoteFilePath(note) {
+  if (!note || !folders[note.folderId]) return null;
+
+  const folderName = folders[note.folderId].name || "General";
+  
+  // Use the sanitizer for both the folder and title
+  const cleanFolder = sanitizeFileName(folderName);
+  const cleanTitle = sanitizeFileName(note.title || "Untitled");
+  
+  return `${cleanFolder}/${cleanTitle}.md`;
+}
+
 function getNoteFilePath(note) {
   if (!note) return null;
   const folderName = folders[note.folderId]?.name || "General";
@@ -598,13 +830,6 @@ editor.addEventListener("input", () => {
   if (!activeNoteId || !notes[activeNoteId]) return;
   notes[activeNoteId].content = editor.value;
   notes[activeNoteId].updatedAt = Date.now();
-
-  const firstLine = editor.value.trim().split("\n")[0]?.replace(/^[#\-\*\s]+/, "") || "Untitled";
-  notes[activeNoteId].title = firstLine.slice(0, 20);
-
-  // Update item label in tree without fully re-rendering
-  const activeItem = treeContainer.querySelector(".note-item.active");
-  if (activeItem) activeItem.textContent = notes[activeNoteId].title;
 
   updateStats();
   persistData();
