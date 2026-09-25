@@ -431,11 +431,22 @@ async function syncActiveNoteToGit() {
   }
 }
 
+const PROTECTED_FILES = [
+  "README.md",
+  "readme.md"
+];
+
+// Helper to check if a path or filename matches protected list
+function isProtectedPath(filePath) {
+  const fileName = filePath.split("/").pop();
+  return PROTECTED_FILES.includes(fileName) || PROTECTED_FILES.includes(filePath);
+}
+
 /**
  * Full Tree Sync:
  * 1. Queries GitHub's Git Trees API recursively to see all existing remote .md files.
  * 2. Pushes/updates all local notes to their current folder paths.
- * 3. Deletes any remote files that have been removed or moved locally.
+ * 3. Deletes any remote files that have been removed or moved locally (except protected files).
  */
 async function syncFullTreeToGit() {
   if (!isGitConnected()) return;
@@ -460,7 +471,8 @@ async function syncFullTreeToGit() {
     if (treeRes.ok) {
       const treeData = await treeRes.json();
       (treeData.tree || []).forEach((item) => {
-        if (item.type === "blob" && item.path.endsWith(".md")) {
+        // Exclude protected files right away so they are never touched
+        if (item.type === "blob" && item.path.endsWith(".md") && !isProtectedPath(item.path)) {
           remoteFiles[item.path] = item.sha;
         }
       });
@@ -471,12 +483,12 @@ async function syncFullTreeToGit() {
     const localFiles = {};
     Object.values(notes).forEach((note) => {
       const path = getNoteFilePath(note);
-      if (path) localFiles[path] = note;
+      if (path && !isProtectedPath(path)) localFiles[path] = note;
     });
 
     // 3. Delete remote files that do not exist locally
     for (const [remotePath, sha] of Object.entries(remoteFiles)) {
-      if (!localFiles[remotePath]) {
+      if (!localFiles[remotePath] && !isProtectedPath(remotePath)) {
         saveStatus.textContent = `Deleting ${remotePath}...`;
         await deleteRemoteFile(remotePath);
       }

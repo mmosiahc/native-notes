@@ -15,7 +15,7 @@
   host.style.cssText = "all: initial; position: static; z-index: 2147483647;";
   (document.body || document.documentElement).appendChild(host);
 
-  const shadow = host.attachShadow({ mode: "open" });
+ const shadow = host.attachShadow({ mode: "open" });
 
   shadow.innerHTML = `
     <style>
@@ -66,15 +66,15 @@
         }
         .pill-btn:hover {
           background: #334155;
-          color: #60a5fa;
+          color: #22c55e;
         }
         .pill-btn.primary {
-          background: #1e3a8a;
-          color: #60a5fa;
+          background: rgba(34, 197, 94, 0.15);
+          color: #22c55e;
         }
         .pill-btn.primary:hover {
-          background: #2563eb;
-          color: #ffffff;
+          background: #22c55e;
+          color: #09090b;
         }
       }
 
@@ -120,7 +120,7 @@
 
       .pill-btn:hover {
         background: #f3f4f6;
-        color: #2563eb;
+        color: #16a34a;
         transform: scale(1.05);
       }
 
@@ -128,14 +128,15 @@
         transform: scale(0.95);
       }
 
+      /* Light Mode Primary Button */
       .pill-btn.primary {
-        background: #eff6ff;
-        color: #2563eb;
+        background: #f0fdf4;
+        color: #16a34a;
       }
 
       .pill-btn.primary:hover {
-        background: #2563eb;
-        color: #ffffff;
+        background: #22c55e;
+        color: #09090b;
       }
 
       /* Tooltips (fly out to the left) */
