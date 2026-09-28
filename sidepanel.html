@@ -59,6 +59,14 @@
     <div style="display: flex; align-items: center; gap: 8px;">
       <span id="save-status">Saved</span>
       <button id="git-config-btn" class="icon-btn-sm" title="Configure Git Sync" style="height: 18px; padding: 1px 4px; font-size: 10px;">⚙ Git</button>
+      <!-- Hidden File/Folder Inputs -->
+      <input type="file" id="import-folder-input" webkitdirectory directory multiple style="display: none;" />
+      <input type="file" id="import-files-input" accept=".md,text/markdown" multiple style="display: none;" />
+
+      <!-- Import / Export Action Buttons (e.g. In Pane Header or Settings) -->
+       <button id="import-files-btn" class="icon-btn-sm" title="Import Individual Markdown Files">Import Files</button>
+      <button id="import-folder-btn" class="icon-btn-sm" title="Import Folder of Notes">Import Folder</button>
+      <button id="export-zip-btn" class="icon-btn-sm" title="Export All Notes to ZIP">Export ZIP</button>
     </div>
     </footer>
   </div>
@@ -108,6 +116,7 @@
   </dialog>
 
   <script src="marked.min.js"></script>
+  <script src="jszip.min.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

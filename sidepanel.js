@@ -527,6 +527,136 @@ async function syncFullTreeToGit() {
   }
 }
 
+// --- Selectors ---
+const importFilesInput = document.getElementById("import-files-input");
+const importFolderInput = document.getElementById("import-folder-input");
+const importFilesBtn = document.getElementById("import-files-btn");
+const importFolderBtn = document.getElementById("import-folder-btn");
+
+// Trigger file picker
+importFilesBtn.addEventListener("click", () => {
+  importFilesInput.value = "";
+  importFilesInput.click();
+});
+
+// Trigger directory picker
+importFolderBtn.addEventListener("click", () => {
+  importFolderInput.value = "";
+  importFolderInput.click();
+});
+
+// Listener for single or multiple individual files
+importFilesInput.addEventListener("change", (e) => {
+  handleIncomingFiles(Array.from(e.target.files), false);
+});
+
+// Listener for folder directory
+importFolderInput.addEventListener("change", (e) => {
+  handleIncomingFiles(Array.from(e.target.files), true);
+});
+
+// --- Helper: Find or Create Folder Safely ---
+function getOrCreateFolderId(folderName) {
+  const trimmed = (folderName || "General").trim();
+
+  // Check if a folder with this name (case-insensitive) already exists
+  const existing = Object.values(folders).find(
+    (f) => f && f.name && f.name.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (existing) return existing.id;
+
+  // If not found, create a new valid folder entry in memory!
+  const newFolderId = "f_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
+  folders[newFolderId] = {
+    id: newFolderId,
+    name: trimmed
+  };
+  return newFolderId;
+}
+
+// --- Shared File / Folder Processor ---
+async function handleIncomingFiles(fileList, isDirectory) {
+  // 1. Filter markdown files, ignore hidden directories (like .git, .obsidian)
+  const mdFiles = fileList.filter((f) => {
+    const isMd = f.name.toLowerCase().endsWith(".md");
+    const path = f.webkitRelativePath || f.name;
+    const isHidden = path.split("/").some((part) => part.startsWith("."));
+    return isMd && !isHidden;
+  });
+
+  if (!mdFiles.length) {
+    alert("No markdown (.md) files found.");
+    return;
+  }
+
+  saveStatus.textContent = `Importing ${mdFiles.length} file(s)...`;
+
+  try {
+    let firstImportedNoteId = null;
+
+    for (const file of mdFiles) {
+      let targetFolderName = "General";
+
+      if (isDirectory && file.webkitRelativePath) {
+        const parts = file.webkitRelativePath.split("/");
+        if (parts.length > 2) {
+          // Nested: RootDir/SubFolder/.../file.md -> SubFolder
+          targetFolderName = parts[1];
+        } else if (parts.length === 2) {
+          // Direct child: RootDir/file.md -> RootDir
+          targetFolderName = parts[0];
+        }
+      } else {
+        // Single file import: use active note's folder name if available
+        if (activeNoteId && notes[activeNoteId] && folders[notes[activeNoteId].folderId]) {
+          targetFolderName = folders[notes[activeNoteId].folderId].name;
+        }
+      }
+
+      const folderId = getOrCreateFolderId(targetFolderName);
+      const noteTitle = file.name.replace(/\.md$/i, "").trim() || "Untitled Note";
+      const textContent = await file.text();
+
+      const noteId = "note_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
+      notes[noteId] = {
+        id: noteId,
+        title: noteTitle,
+        content: textContent,
+        folderId: folderId,
+        updatedAt: Date.now()
+      };
+
+      if (!firstImportedNoteId) {
+        firstImportedNoteId = noteId;
+      }
+    }
+
+    // Set active note so the folder stays open and displays the note
+    if (firstImportedNoteId) {
+      activeNoteId = firstImportedNoteId;
+    }
+
+    // Persist both folders and notes to storage
+    await chrome.storage.local.set({ folders, notes, activeNoteId });
+
+    // Refresh UI tree & editor view
+    renderTree();
+    loadActiveNote();
+
+    saveStatus.textContent = `Imported ${mdFiles.length} note(s)`;
+    setTimeout(() => (saveStatus.textContent = "Saved"), 2500);
+
+    // Sync to Git if connected
+    if (typeof syncFullTreeToGit === "function" && isGitConnected()) {
+      syncFullTreeToGit();
+    }
+  } catch (err) {
+    console.error("Import error:", err);
+    saveStatus.textContent = "Import failed";
+    alert(`Import failed: ${err.message}`);
+  }
+}
+
 // --- Render Folder & Note Tree ---
 function renderTree() {
   treeContainer.innerHTML = "";
@@ -816,14 +946,6 @@ function getNoteFilePath(note) {
   const cleanFolder = sanitizeFileName(folderName);
   const cleanTitle = sanitizeFileName(note.title || "Untitled");
   
-  return `${cleanFolder}/${cleanTitle}.md`;
-}
-
-function getNoteFilePath(note) {
-  if (!note) return null;
-  const folderName = folders[note.folderId]?.name || "General";
-  const cleanFolder = folderName.replace(/[/\\?%*:|"<>]/g, "-").trim();
-  const cleanTitle = (note.title || "Untitled").replace(/[/\\?%*:|"<>]/g, "-").trim();
   return `${cleanFolder}/${cleanTitle}.md`;
 }
 
