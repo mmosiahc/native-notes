@@ -589,3 +589,15 @@ footer {
   border-radius: 4px;
   cursor: pointer;
 }
+
+/* Highlight target folder when dragging over it */
+.folder-header.drag-over {
+  background: var(--hover);
+  outline: 2px dashed #22c55e;
+  outline-offset: -2px;
+}
+
+/* Dim note slightly while being dragged */
+.note-item.dragging {
+  opacity: 0.4;
+}

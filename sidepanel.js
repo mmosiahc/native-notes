@@ -657,6 +657,40 @@ async function handleIncomingFiles(fileList, isDirectory) {
   }
 }
 
+async function moveNoteToFolder(noteId, targetFolderId) {
+  const note = notes[noteId];
+  if (!note || note.folderId === targetFolderId) return;
+
+  const oldPath = getNoteFilePath(note);
+  const oldFolderId = note.folderId;
+
+  // 1. Update local state
+  note.folderId = targetFolderId;
+  note.updatedAt = Date.now();
+  activeNoteId = note.id;
+
+  // 2. Persist locally
+  await chrome.storage.local.set({ notes, activeNoteId });
+  renderTree();
+  loadActiveNote();
+
+  // 3. Reconcile on GitHub
+  if (isGitConnected() && oldPath) {
+    saveStatus.textContent = "Moving note in Git...";
+    try {
+      // Delete from previous folder on remote
+      await deleteRemoteFile(oldPath);
+      // Sync file to the new destination path
+      await syncActiveNoteToGit();
+      saveStatus.textContent = "Git synced";
+      setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+    } catch (err) {
+      console.error("Git move failed:", err);
+      saveStatus.textContent = "Move error";
+    }
+  }
+}
+
 // --- Render Folder & Note Tree ---
 function renderTree() {
   treeContainer.innerHTML = "";
@@ -687,6 +721,28 @@ function renderTree() {
         <button class="icon-btn-sm del-folder" title="Delete Folder">✕</button>
       </div>
     `;
+
+    // --- DROP TARGET: Folder Header ---
+    header.addEventListener("dragover", (e) => {
+      e.preventDefault(); // Required to allow drop
+      e.dataTransfer.dropEffect = "move";
+      header.classList.add("drag-over");
+    });
+
+    header.addEventListener("dragleave", () => {
+      header.classList.remove("drag-over");
+    });
+
+    header.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      header.classList.remove("drag-over");
+
+      const droppedNoteId = e.dataTransfer.getData("text/plain");
+      if (droppedNoteId && notes[droppedNoteId]) {
+        folderGroup.classList.remove("collapsed");
+        await moveNoteToFolder(droppedNoteId, folder.id);
+      }
+    });
 
     // Click folder header to toggle collapse / expand
     header.addEventListener("click", () => {
@@ -806,6 +862,20 @@ function renderTree() {
       const itemContainer = document.createElement("div");
       itemContainer.className = `note-item ${note.id === activeNoteId ? "active" : ""}`;
 
+      // --- DRAGGABLE SOURCE: Note Item ---
+      itemContainer.draggable = true;
+
+      itemContainer.addEventListener("dragstart", (e) => {
+        e.stopPropagation();
+        e.dataTransfer.setData("text/plain", note.id);
+        e.dataTransfer.effectAllowed = "move";
+        itemContainer.classList.add("dragging");
+      });
+
+      itemContainer.addEventListener("dragend", () => {
+        itemContainer.classList.remove("dragging");
+      });
+
       // 2. Clickable area for note name
       const titleLabel = document.createElement("span");
       titleLabel.className = "note-title-label";
@@ -872,7 +942,30 @@ function renderTree() {
         renderTree(); // Refresh labels
         persistData(); // Saves memory update (e.g. updatedAt)
       });
-      
+
+      const moveBtn = document.createElement("button");
+      moveBtn.className = "icon-btn-sm move-note";
+      moveBtn.innerHTML = "⇄";
+      moveBtn.title = "Move to folder";
+
+      moveBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+
+        // Build folder selection message
+        const folderNames = Object.values(folders).map((f) => f.name).join(", ");
+        const chosenName = await showPromptDialog({
+          title: "Move Note",
+          message: `Enter target folder name (${folderNames}):`,
+          defaultValue: folders[note.folderId]?.name || "General"
+        });
+
+        if (!chosenName || !chosenName.trim()) return;
+
+        const targetFolderId = getOrCreateFolderId(chosenName.trim());
+        await moveNoteToFolder(note.id, targetFolderId);
+      });
+
+      noteActions.appendChild(moveBtn);
       noteActions.appendChild(renameBtn);
       itemContainer.appendChild(noteActions);
       noteList.appendChild(itemContainer);
