@@ -601,3 +601,114 @@ footer {
 .note-item.dragging {
   opacity: 0.4;
 }
+
+/* Note Action Button (Ellipsis) */
+.note-actions {
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  margin-left: 4px;
+}
+
+.note-item:hover .note-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.note-more-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.note-more-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Modal Action Choice List */
+.modal-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.modal-choice-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.modal-choice-btn:hover {
+  background: var(--hover);
+  border-color: #22c55e;
+}
+
+/* Manage Notes Modal Action List */
+.manage-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.manage-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.manage-menu-item:hover {
+  background: var(--hover);
+  border-color: #22c55e;
+}
+
+.manage-menu-item .menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.manage-menu-item:hover .menu-icon {
+  color: #22c55e;
+  transform: scale(1.05);
+}
+
+.manage-menu-item .menu-icon svg {
+  display: block;
+}

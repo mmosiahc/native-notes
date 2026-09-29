@@ -101,6 +101,7 @@ function showCustomDialog({
     }
 
     // Confirm Button
+    modalConfirmBtn.style.display = "block";
     modalConfirmBtn.className = isDanger ? "modal-btn danger" : "modal-btn confirm";
     modalConfirmBtn.textContent = confirmLabel || (isDanger ? "Delete" : "OK");
 
@@ -283,57 +284,60 @@ async function startGitOnboarding() {
 }
 
 // Git Button Click Handler
-gitConfigBtn.addEventListener("click", async () => {
-  if (isGitConnected()) {
-    const statusDetails =
-      `Repository: ${gitConfig.owner}/${gitConfig.repo}\n` +
-      `Branch: ${gitConfig.branch || "main"}\n\n` +
-      `Choose an action:`;
+if (gitConfigBtn) {
+  gitConfigBtn.addEventListener("click", async () => {
+    if (isGitConnected()) {
+      const statusDetails =
+        `Repository: ${gitConfig.owner}/${gitConfig.repo}\n` +
+        `Branch: ${gitConfig.branch || "main"}\n\n` +
+        `Choose an action:`;
 
-    const choice = await showCustomDialog({
-      title: "Git Integration",
-      message: statusDetails,
-      showCancel: true,
-      cancelLabel: "Close",
-      extraBtnLabel: "Options...", // Opens Reconfigure/Disconnect
-      confirmLabel: "Sync All to Git"
-    });
-
-    if (choice === true) {
-      // Trigger Full Reconciliation
-      await syncFullTreeToGit();
-    } else if (choice === "EXTRA") {
-      // Sub-menu for Reconfigure vs Disconnect
-      const manageChoice = await showCustomDialog({
-        title: "Manage Git Connection",
-        message: `Connected to ${gitConfig.owner}/${gitConfig.repo}`,
+      const choice = await showCustomDialog({
+        title: "Git Integration",
+        message: statusDetails,
         showCancel: true,
-        cancelLabel: "Back",
-        extraBtnLabel: "Disconnect",
-        confirmLabel: "Reconfigure"
+        cancelLabel: "Close",
+        extraBtnLabel: "Options...", // Opens Reconfigure/Disconnect
+        confirmLabel: "Sync All to Git"
       });
 
-      if (manageChoice === true) {
-        startGitOnboarding();
-      } else if (manageChoice === "EXTRA") {
-        const confirmed = await showConfirmDialog(
-          `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Local notes will remain.`
-        );
-        if (confirmed) {
-          gitConfig = null;
-          await chrome.storage.local.remove("gitConfig");
-          gitIndicator.style.display = "none";
-          gitStatusText.textContent = "";
-          saveStatus.textContent = "Git disconnected";
-          setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+      if (choice === true) {
+        // Trigger Full Reconciliation
+        await syncFullTreeToGit();
+      } else if (choice === "EXTRA") {
+        // Sub-menu for Reconfigure vs Disconnect
+        const manageChoice = await showCustomDialog({
+          title: "Manage Git Connection",
+          message: `Connected to ${gitConfig.owner}/${gitConfig.repo}`,
+          showCancel: true,
+          cancelLabel: "Back",
+          extraBtnLabel: "Disconnect",
+          confirmLabel: "Reconfigure"
+        });
+
+        if (manageChoice === true) {
+          startGitOnboarding();
+        } else if (manageChoice === "EXTRA") {
+          const confirmed = await showConfirmDialog(
+            `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Local notes will remain.`
+          );
+          if (confirmed) {
+            gitConfig = null;
+            await chrome.storage.local.remove("gitConfig");
+            gitIndicator.style.display = "none";
+            gitStatusText.textContent = "";
+            saveStatus.textContent = "Git disconnected";
+            setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+          }
         }
       }
+      return;
     }
-    return;
-  }
 
-  startGitOnboarding();
-});
+    startGitOnboarding();
+  });
+}
+
 
 // Silent Background Committer
 // Conflict-Free, One-Way Push Engine (Native Notes -> GitHub)
@@ -534,16 +538,21 @@ const importFilesBtn = document.getElementById("import-files-btn");
 const importFolderBtn = document.getElementById("import-folder-btn");
 
 // Trigger file picker
-importFilesBtn.addEventListener("click", () => {
-  importFilesInput.value = "";
-  importFilesInput.click();
-});
+if (importFilesBtn) {
+  importFilesBtn.addEventListener("click", () => {
+    importFilesInput.value = "";
+    importFilesInput.click();
+  });
+}
+
 
 // Trigger directory picker
-importFolderBtn.addEventListener("click", () => {
-  importFolderInput.value = "";
-  importFolderInput.click();
-});
+if (importFolderBtn) {
+  importFolderBtn.addEventListener("click", () => {
+    importFolderInput.value = "";
+    importFolderInput.click();
+  });
+}
 
 // Listener for single or multiple individual files
 importFilesInput.addEventListener("change", (e) => {
@@ -865,7 +874,10 @@ function renderTree() {
       // --- DRAGGABLE SOURCE: Note Item ---
       itemContainer.draggable = true;
 
+      let isDragging  = false;
+
       itemContainer.addEventListener("dragstart", (e) => {
+        isDragging = true;
         e.stopPropagation();
         e.dataTransfer.setData("text/plain", note.id);
         e.dataTransfer.effectAllowed = "move";
@@ -874,105 +886,345 @@ function renderTree() {
 
       itemContainer.addEventListener("dragend", () => {
         itemContainer.classList.remove("dragging");
+        // Reset asynchronously after click queue finishes processing
+        setTimeout(() => {
+          isDragging = false;
+        }, 50);
       });
 
-      // 2. Clickable area for note name
-      const titleLabel = document.createElement("span");
-      titleLabel.className = "note-title-label";
-      titleLabel.textContent = note.title || "Untitled";
+      // Click to select the note
+      itemContainer.addEventListener("click", () => {
+        if (isDragging) return; // Prevent selection if just finished dragging
+        if (activeNoteId === note.id) return;
 
-      titleLabel.addEventListener("click", (e) => {
-        e.stopPropagation();
         activeNoteId = note.id;
         renderTree();
         loadActiveNote();
         persistData();
       });
-      
+
+      // Note label
+      const titleLabel = document.createElement("span");
+      titleLabel.className = "note-title-label";
+      titleLabel.textContent = note.title || "Untitled";
       itemContainer.appendChild(titleLabel);
 
-      // 3. New Action Button Area (hidden until hover)
+     // Actions container with ellipsis
       const noteActions = document.createElement("div");
       noteActions.className = "note-actions";
 
-      // 4. ADD the "Rename Note" button
-      const renameBtn = document.createElement("button");
-      renameBtn.className = "icon-btn-sm rename-note";
-      renameBtn.innerHTML = "✎"; // or use an SVG
-      renameBtn.title = "Rename Note";
+      // 4. Combined More Options (Ellipsis) Button
+      const moreBtn = document.createElement("button");
+      moreBtn.className = "note-more-btn";
+      moreBtn.innerHTML = "&#8942;"; // Vertical ellipsis ⋮
+      moreBtn.title = "Note actions";
 
-      // --- ADD the click handler that invokes the Step 3 dialog and Step 2 fix ---
-      renameBtn.addEventListener("click", async (e) => {
+      // Prevent row drag or selection when interacting with the button
+      moreBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+      moreBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        
-        // Use Step 3's validated prompt
-        const newName = await promptNoteName({
-          title: "Rename Note",
-          message: `Change filename for "${note.title}"?`,
-          defaultValue: note.title
+
+        // Show modal with action choices
+        const action = await showCustomDialog({
+          title: note.title || "Note Options",
+          message: "Choose an action for this note:",
+          showCancel: true,
+          cancelLabel: "Cancel",
+          extraBtnLabel: "Move to...", // Secondary action
+          confirmLabel: "Rename"       // Primary action
         });
 
-        // Fail conditions: cancel, same name, or blank name
-        if (!newName || newName === note.title) return;
+        // 1. Rename Action
+        if (action === true) {
+          const newName = await promptNoteName({
+            title: "Rename Note",
+            message: `Enter new name for "${note.title}":`,
+            defaultValue: note.title
+          });
 
-        // --- THE GIT FIX: Atomic Rename Operation ---
-        if (gitConfig) {
-          saveStatus.textContent = "Renaming on Git...";
+          if (!newName || newName === note.title) return;
 
-          // a. Calculate the current (old) file path
-          const oldRemotePath = getNoteFilePath(note);
+          if (isGitConnected()) {
+            saveStatus.textContent = "Renaming on Git...";
+            const oldRemotePath = getNoteFilePath(note);
+            if (oldRemotePath) await deleteRemoteFile(oldRemotePath);
 
-          // b. Delete the old file path on GitHub
-          if (oldRemotePath) {
-            await deleteRemoteFile(oldRemotePath);
+            notes[note.id].title = newName;
+            notes[note.id].updatedAt = Date.now();
+            await syncActiveNoteToGit();
+          } else {
+            notes[note.id].title = newName;
+            notes[note.id].updatedAt = Date.now();
           }
-          
-          // c. Reset local title state in memory
-          notes[note.id].title = newName;
-          notes[note.id].updatedAt = Date.now();
 
-          // d. Force immediate sync (it will sync content to the NEW path from Step b)
-          await syncActiveNoteToGit();
-        } else {
-          // If Git isn't connected, just update memory
-          notes[note.id].title = newName;
-          notes[note.id].updatedAt = Date.now();
+          renderTree();
+          persistData();
         }
 
-        renderTree(); // Refresh labels
-        persistData(); // Saves memory update (e.g. updatedAt)
+        // 2. Move Action
+        else if (action === "EXTRA") {
+          const currentFolderName = folders[note.folderId]?.name || "General";
+          const folderNames = Object.values(folders).map((f) => f.name).join(", ");
+
+          const targetName = await showPromptDialog({
+            title: "Move Note",
+            message: `Current: "${currentFolderName}"\nAvailable: ${folderNames}\n\nEnter target folder:`,
+            defaultValue: currentFolderName
+          });
+
+          if (!targetName || !targetName.trim() || targetName.trim() === currentFolderName) {
+            return;
+          }
+
+          const targetFolderId = getOrCreateFolderId(targetName.trim());
+          await moveNoteToFolder(note.id, targetFolderId);
+        }
       });
 
-      const moveBtn = document.createElement("button");
-      moveBtn.className = "icon-btn-sm move-note";
-      moveBtn.innerHTML = "⇄";
-      moveBtn.title = "Move to folder";
-
-      moveBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-
-        // Build folder selection message
-        const folderNames = Object.values(folders).map((f) => f.name).join(", ");
-        const chosenName = await showPromptDialog({
-          title: "Move Note",
-          message: `Enter target folder name (${folderNames}):`,
-          defaultValue: folders[note.folderId]?.name || "General"
-        });
-
-        if (!chosenName || !chosenName.trim()) return;
-
-        const targetFolderId = getOrCreateFolderId(chosenName.trim());
-        await moveNoteToFolder(note.id, targetFolderId);
-      });
-
-      noteActions.appendChild(moveBtn);
-      noteActions.appendChild(renameBtn);
+      noteActions.appendChild(moreBtn);
       itemContainer.appendChild(noteActions);
       noteList.appendChild(itemContainer);
     });
 
     folderGroup.appendChild(noteList);
     treeContainer.appendChild(folderGroup);
+  });
+}
+
+async function exportAllNotesToZip() {
+  const noteList = Object.values(notes);
+  if (!noteList.length) {
+    alert("No notes available to export.");
+    return;
+  }
+
+  if (typeof JSZip === "undefined") {
+    alert("JSZip library not found. Please ensure jszip.min.js is included.");
+    return;
+  }
+
+  saveStatus.textContent = "Generating ZIP archive...";
+
+  const zip = new JSZip();
+
+  for (const note of noteList) {
+    const folder = folders[note.folderId];
+    const folderName = (folder ? folder.name : "General").replace(/[\\/:*?"<>|]/g, "_").trim();
+    const fileName = `${(note.title || "Untitled").replace(/[\\/:*?"<>|]/g, "_").trim()}.md`;
+    const content = note.content || `# ${note.title}\n`;
+
+    zip.folder(folderName).file(fileName, content);
+  }
+
+  try {
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const downloadUrl = URL.createObjectURL(zipBlob);
+
+    const link = document.createElement("a");
+    const dateStr = new Date().toISOString().split("T")[0];
+    link.download = `native-notes-backup-${dateStr}.zip`;
+    link.href = downloadUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(downloadUrl);
+
+    saveStatus.textContent = "Exported to ZIP";
+    setTimeout(() => (saveStatus.textContent = "Saved"), 2500);
+  } catch (err) {
+    console.error("ZIP export failed:", err);
+    saveStatus.textContent = "Export error";
+  }
+}
+
+const MANAGE_ICONS = {
+  // Markdown / Document Icon
+  file: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+    <polyline points="14 2 14 8 20 8"></polyline>
+    <line x1="16" y1="13" x2="8" y2="13"></line>
+    <line x1="16" y1="17" x2="8" y2="17"></line>
+    <line x1="10" y1="9" x2="8" y2="9"></line>
+  </svg>`,
+
+  // Folder Directory Icon
+  folder: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+  </svg>`,
+
+  // ZIP / Archive Box Icon
+  archive: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="21 8 21 21 3 21 3 8"></polyline>
+    <rect x="1" y="3" width="22" height="5"></rect>
+    <line x1="10" y1="12" x2="14" y2="12"></line>
+  </svg>`,
+
+  // Official GitHub Invertocat Logo
+  git: `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+  </svg>`
+};
+
+// Generic list-selection modal builder
+function showMenuDialog({ title = "Manage Notes", options = [] }) {
+  return new Promise((resolve) => {
+    modalTitle.textContent = title;
+    modalTitle.style.display = "block";
+
+    // Build the clickable items inside modalMsg container
+    modalMsg.style.display = "block";
+    modalMsg.innerHTML = "";
+
+    const listContainer = document.createElement("div");
+    listContainer.className = "manage-menu-list";
+
+    options.forEach((opt) => {
+      const btn = document.createElement("button");
+      btn.className = "manage-menu-item";
+      
+      const iconSpan = document.createElement("span");
+      iconSpan.className = "menu-icon";
+      iconSpan.innerHTML = opt.iconSvg || opt.icon || "";
+
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = opt.label;
+
+      btn.appendChild(iconSpan);
+      btn.appendChild(labelSpan);
+
+      btn.addEventListener("click", () => {
+        cleanup();
+        resolve(opt.id);
+      });
+      listContainer.appendChild(btn);
+    });
+
+    modalMsg.appendChild(listContainer);
+
+    modalInput.style.display = "none";
+    modalConfirmBtn.style.display = "none";
+    modalExtraBtn.style.display = "none";
+
+    modalCancelBtn.style.display = "block";
+    modalCancelBtn.textContent = "Close";
+
+    modalOverlay.classList.add("open");
+
+    const cleanup = () => {
+      modalOverlay.classList.remove("open");
+      modalCancelBtn.removeEventListener("click", onCancel);
+      window.removeEventListener("keydown", onKey);
+      modalMsg.innerHTML = ""; // Clear dynamic list items
+
+      //Reset button visibility for future dialogs
+      if (modalConfirmBtn) modalConfirmBtn.style.display = "";
+      if (modalExtraBtn) modalExtraBtn.style.display = "none";
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+
+    modalCancelBtn.addEventListener("click", onCancel);
+    window.addEventListener("keydown", onKey);
+  });
+}
+
+// Manage Notes Button Listener
+const manageNotesBtn = document.getElementById("manage-notes-btn");
+
+if (manageNotesBtn) {
+  manageNotesBtn.addEventListener("click", async () => {
+    const gitLabel = isGitConnected()
+      ? `GitHub Sync (${gitConfig.repo})`
+      : "Connect GitHub...";
+
+    const choice = await showMenuDialog({
+      title: "Manage Notes",
+      options: [
+        { id: "import-files", iconSvg: MANAGE_ICONS.file, label: "Import Markdown Files" },
+        { id: "import-folder", iconSvg: MANAGE_ICONS.folder, label: "Import Directory" },
+        { id: "export-zip", iconSvg: MANAGE_ICONS.archive, label: "Export Notes" },
+        { id: "git-sync", iconSvg: MANAGE_ICONS.git, label: gitLabel }
+      ]
+    });
+
+    if (!choice) return;
+
+    switch (choice) {
+      case "import-files":
+        if (importFilesInput) {
+          importFilesInput.value = "";
+          importFilesInput.click();
+        }
+        break;
+
+      case "import-folder":
+        if (importFolderInput) {
+          importFolderInput.value = "";
+          importFolderInput.click();
+        }
+        break;
+
+      case "export-zip":
+        // Trigger existing ZIP export logic
+        exportAllNotesToZip();
+        break;
+
+      case "git-sync":
+        // Trigger existing Git flow
+        if (isGitConnected()) {
+          const gitChoice = await showCustomDialog({
+            title: "Git Integration",
+            message: `Repository: ${gitConfig.owner}/${gitConfig.repo}\nBranch: ${gitConfig.branch || "main"}`,
+            showCancel: true,
+            cancelLabel: "Close",
+            extraBtnLabel: "Options...",
+            confirmLabel: "Sync All to Git"
+          });
+
+          if (gitChoice === true) {
+            await syncFullTreeToGit();
+          } else if (gitChoice === "EXTRA") {
+            const manageChoice = await showCustomDialog({
+              title: "Manage Git Connection",
+              message: `Connected to ${gitConfig.owner}/${gitConfig.repo}`,
+              showCancel: true,
+              cancelLabel: "Back",
+              extraBtnLabel: "Disconnect",
+              confirmLabel: "Reconfigure"
+            });
+
+            if (manageChoice === true) {
+              startGitOnboarding();
+            } else if (manageChoice === "EXTRA") {
+              const confirmed = await showConfirmDialog(
+                `Disconnect from ${gitConfig.owner}/${gitConfig.repo}? Local notes will remain.`
+              );
+              if (confirmed) {
+                gitConfig = null;
+                await chrome.storage.local.remove("gitConfig");
+                if (gitIndicator) gitIndicator.style.display = "none";
+                if (gitStatusText) gitStatusText.textContent = "";
+                saveStatus.textContent = "Git disconnected";
+                setTimeout(() => (saveStatus.textContent = "Saved"), 2000);
+              }
+            }
+          }
+        } else {
+          startGitOnboarding();
+        }
+        break;
+    }
   });
 }
 
